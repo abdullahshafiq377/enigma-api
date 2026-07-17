@@ -1,20 +1,22 @@
-import { Router, Request, Response } from 'express';
-import mongoose from 'mongoose';
-import userRoutes from './user.routes';
+import { Router } from 'express';
 
-const router = Router();
+import adminRoutes from '@/modules/admin/admin.routes';
+import certificateRoutes from '@/modules/certificate/certificate.routes';
+import moduleRoutes from '@/modules/module/module.routes';
+import progressRoutes from '@/modules/progress/progress.routes';
+import userRoutes from '@/modules/user/user.routes';
+import videoRoutes from '@/modules/video/video.routes';
+import webhookRoutes from '@/modules/webhook/webhook.routes';
 
-router.get('/health', (_req: Request, res: Response) => {
-  const dbState = mongoose.connection.readyState; // 1 = connected
-  res.json({
-    success: true,
-    status: 'ok',
-    uptime: process.uptime(),
-    database: dbState === 1 ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString(),
-  });
-});
+/** v1 API router aggregator. Mount each feature module here. */
+const v1Router = Router();
 
-router.use('/users', userRoutes);
+v1Router.use('/users', userRoutes);
+v1Router.use('/modules', moduleRoutes);
+v1Router.use('/videos', videoRoutes);
+v1Router.use('/progress', progressRoutes);
+v1Router.use('/certificates', certificateRoutes);
+v1Router.use('/admin', adminRoutes);
+v1Router.use('/webhooks', webhookRoutes);
 
-export default router;
+export default v1Router;
