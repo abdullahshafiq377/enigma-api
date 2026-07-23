@@ -69,16 +69,33 @@ export const certificateService = {
     }));
   },
 
-  /** Presigned download URL for a completed certificate. Logs a download event for analytics. */
+  /**
+   * Presigned download URL for a completed certificate. Logs a `cert_download`
+   * event on success and a `cert_download_error` event on failure, for analytics.
+   */
   async getDownloadUrl(userId: string, moduleId: string): Promise<string> {
-    const cert = await certificateRepository.findByUserAndModule(userId, moduleId);
-    if (!cert?.pdfKey) throw ApiError.notFound('Certificate not found');
-    await Event.create({
-      userId: new Types.ObjectId(userId),
-      type: 'cert_download',
-      at: new Date(),
-      meta: { moduleId },
-    });
-    return mediaService.getDownloadUrl(cert.pdfKey);
+    const uid = new Types.ObjectId(userId);
+    try {
+      const cert = await certificateRepository.findByUserAndModule(userId, moduleId);
+      if (!cert?.pdfKey) throw ApiError.notFound('Certificate not found');
+      // Presign first, then log success — so a presign failure counts as an error, not a download.
+      const url = await mediaService.getDownloadUrl(cert.pdfKey);
+      await Event.create({
+        userId: uid,
+        type: 'cert_download',
+        at: new Date(),
+        meta: { moduleId },
+      });
+      return url;
+    } catch (err) {
+      // Best-effort error log; never mask the original failure.
+      await Event.create({
+        userId: uid,
+        type: 'cert_download_error',
+        at: new Date(),
+        meta: { moduleId, reason: err instanceof Error ? err.message : 'unknown' },
+      }).catch(() => {});
+      throw err;
+    }
   },
 };

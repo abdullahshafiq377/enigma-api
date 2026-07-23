@@ -1,3 +1,5 @@
+import type { Types } from 'mongoose';
+
 export const TIERS = ['insight', 'mastery', 'sovereign'] as const;
 export type Tier = (typeof TIERS)[number];
 
@@ -22,10 +24,15 @@ export interface IUser {
   email: string;
   firstName?: string | undefined;
   lastName?: string | undefined;
-  company?: string | undefined;
-  jobTitle?: string | undefined;
   tier: Tier;
   role: Role;
+  /**
+   * Relational refs to the Role/Tier rows — the assignment source of truth.
+   * The `tier`/`role` enum strings above are kept as a synced cache so auth,
+   * DTOs, and filters read the enum without a populate/join.
+   */
+  roleId?: Types.ObjectId | undefined;
+  tierId?: Types.ObjectId | undefined;
   registrationStatus: RegistrationStatus;
   invitationStatus: InvitationStatus;
   invitedAt?: Date | undefined;

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { bulkCsvSchema } from '@/modules/admin/admin.validators';
 import { adminUsersService, deriveStatus } from '@/modules/admin/admin-users.service';
+import { Role } from '@/modules/role/role.model';
 import { User } from '@/modules/user/user.model';
 
 // The service writes the tier to Clerk before mirroring to Mongo; stub Clerk so
@@ -27,7 +28,6 @@ async function seed(): Promise<void> {
       clerkId: 'c1',
       email: 'ana@enigma.com',
       firstName: 'Ana',
-      company: 'Acme',
       tier: 'insight',
       lastActiveAt: daysAgo(2),
     },
@@ -36,7 +36,6 @@ async function seed(): Promise<void> {
       clerkId: 'c2',
       email: 'ben@beta.com',
       firstName: 'Ben',
-      company: 'Beta',
       tier: 'mastery',
       lastActiveAt: daysAgo(40),
     },
@@ -47,7 +46,6 @@ async function seed(): Promise<void> {
       clerkId: 'c4',
       email: 'dan@beta.com',
       firstName: 'Dan',
-      company: 'Beta',
       tier: 'mastery',
       lastActiveAt: daysAgo(1),
     },
@@ -86,7 +84,7 @@ describe('adminUsersService.list', () => {
     expect(items.map((u) => u.email).sort()).toEqual(['ben@beta.com', 'dan@beta.com']);
   });
 
-  it('searches across email/name/company (case-insensitive)', async () => {
+  it('searches across email/name (case-insensitive)', async () => {
     const { items } = await adminUsersService.list({ limit: 25, search: 'beta' }, NOW);
     expect(items).toHaveLength(2);
   });
@@ -248,11 +246,46 @@ describe('adminUsersService.exportCsv', () => {
     const csv = await adminUsersService.exportCsv({ tier: 'mastery' }, NOW);
     const lines = csv.trim().split('\n');
     expect(lines[0]).toBe(
-      'email,firstName,lastName,company,tier,role,status,invitationStatus,lastActiveAt',
+      'email,firstName,lastName,tier,role,status,invitationStatus,lastActiveAt',
     );
     expect(lines).toHaveLength(3); // header + ben + dan
     expect(csv).toContain('ben@beta.com');
     expect(csv).toContain('dan@beta.com');
     expect(csv).not.toContain('ana@enigma.com');
+  });
+});
+
+describe('adminUsersService.updateRole', () => {
+  beforeEach(() => {
+    updateUserMetadata.mockClear();
+    return seed();
+  });
+
+  it('assigns a role: writes Clerk metadata + mirror (enum + roleId)', async () => {
+    await Role.create({ title: 'Admin', enum: 'admin' });
+    const user = await User.findOne({ email: 'ana@enigma.com' });
+
+    const res = await adminUsersService.updateRole(user!.id, 'admin');
+
+    expect(res).toEqual({ id: user!.id, role: 'admin' });
+    expect(updateUserMetadata).toHaveBeenCalledWith(user!.clerkId, {
+      publicMetadata: { role: 'admin' },
+    });
+    const fresh = await User.findById(user!.id);
+    expect(fresh?.role).toBe('admin');
+    const roleDoc = await Role.findOne({ enum: 'admin' });
+    expect(fresh?.roleId?.toString()).toBe(roleDoc!._id.toString());
+  });
+
+  it('rejects when the member has not completed signup (no clerkId)', async () => {
+    const invited = await User.create({
+      email: 'pending@x.com',
+      tier: 'insight',
+      registrationStatus: 'pending',
+      invitationStatus: 'invited',
+    });
+    await expect(adminUsersService.updateRole(invited.id, 'admin')).rejects.toMatchObject({
+      statusCode: 400,
+    });
   });
 });

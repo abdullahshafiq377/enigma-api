@@ -120,11 +120,12 @@ export const analyticsService = {
     return { top: ranked.slice(0, 5), bottom: ranked.slice(-5).reverse() };
   },
 
-  /** Certificate engagement: generated, downloaded, and downloads by tier. */
+  /** Certificate engagement: generated, downloaded (success/error), and downloads by tier. */
   async certificateStats() {
-    const [generated, downloads, byTierRows] = await Promise.all([
+    const [generated, downloads, downloadErrors, byTierRows] = await Promise.all([
       Certificate.countDocuments(),
       Event.countDocuments({ type: 'cert_download' }),
+      Event.countDocuments({ type: 'cert_download_error' }),
       Event.aggregate([
         { $match: { type: 'cert_download' } },
         { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'u' } },
@@ -136,7 +137,7 @@ export const analyticsService = {
     const byTier = emptyTierRecord();
     for (const r of byTierRows) if (r._id in byTier) byTier[r._id] = r.count;
 
-    return { generated, downloads, byTier };
+    return { generated, downloads, downloadErrors, byTier };
   },
 
   /**

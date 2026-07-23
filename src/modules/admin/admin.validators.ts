@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { TIERS } from '@/modules/user/user.types';
+import { ROLES, TIERS } from '@/modules/user/user.types';
 import { VIDEO_TIERS } from '@/modules/video/video.model';
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
@@ -26,6 +26,7 @@ export const listUsersAdminQuerySchema = z.object({
 export type ListUsersAdminQuery = z.infer<typeof listUsersAdminQuerySchema>;
 
 export const tierUpdateSchema = z.object({ tier: z.enum(TIERS) });
+export const roleUpdateSchema = z.object({ role: z.enum(ROLES) });
 
 export const bulkCsvSchema = z.object({
   csv: z.string().min(1),
@@ -84,6 +85,7 @@ export const attachPdfSchema = z.object({ title: z.string().min(1), key: z.strin
 export const moduleIdQuerySchema = z.object({ moduleId: objectId });
 
 export type TierUpdate = z.infer<typeof tierUpdateSchema>;
+export type RoleUpdate = z.infer<typeof roleUpdateSchema>;
 export type BulkCsv = z.infer<typeof bulkCsvSchema>;
 export type CreateModule = z.infer<typeof createModuleSchema>;
 export type UpdateModule = z.infer<typeof updateModuleSchema>;

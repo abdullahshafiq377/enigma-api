@@ -1,0 +1,22 @@
+node_modules
+dist
+coverage
+tests
+
+# Never bake local env/secrets into the image (Fly uses secrets + fly.toml [env]).
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+.husky
+.vscode
+.idea
+*.log
+npm-debug.log*
+
+# Docker/Fly meta — not needed inside the build context.
+Dockerfile
+.dockerignore
+fly.toml

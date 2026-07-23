@@ -5,10 +5,12 @@ node_modules/
 dist/
 build/
 
-# Environment
+# Environment — ignore ALL env files (incl. .env.bak, .env.production, etc.).
+# The only tracked one is .env.example, which must contain PLACEHOLDERS ONLY.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.bak
 
 # Logs
 logs/

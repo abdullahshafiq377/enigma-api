@@ -10,7 +10,7 @@ const app = createApp();
 async function seedUsers(): Promise<void> {
   await User.create([
     { clerkId: 'c1', email: 'ana@enigma.test', firstName: 'Ana', tier: 'insight' },
-    { clerkId: 'c2', email: 'ben@acme.test', firstName: 'Ben', company: 'Acme', tier: 'mastery' },
+    { clerkId: 'c2', email: 'ben@acme.test', firstName: 'Ben', tier: 'mastery' },
     { clerkId: 'c3', email: 'cara@enigma.test', firstName: 'Cara', tier: 'sovereign' },
   ]);
 }
@@ -30,7 +30,7 @@ describe('userService', () => {
     expect(page.items[0]?.email).toBe('ben@acme.test');
   });
 
-  it('searches by name/company (case-insensitive)', async () => {
+  it('searches by name/email (case-insensitive)', async () => {
     const page = await userService.list({ limit: 25, search: 'acme' });
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.firstName).toBe('Ben');

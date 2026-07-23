@@ -2,10 +2,12 @@ import { clerkClient } from '@clerk/express';
 import type { FilterQuery } from 'mongoose';
 
 import { parseCsv, toCsv } from '@/modules/admin/csv';
+import { Role as RoleModel } from '@/modules/role/role.model';
+import { Tier as TierModel } from '@/modules/tier/tier.model';
 import { User } from '@/modules/user/user.model';
 import { userRepository } from '@/modules/user/user.repository';
 import type { InvitationStatus, IUser, RegistrationStatus } from '@/modules/user/user.types';
-import { type Tier, TIERS } from '@/modules/user/user.types';
+import { type Role, type Tier, TIERS } from '@/modules/user/user.types';
 import { ApiError } from '@/utils/ApiError';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -44,9 +46,8 @@ export interface AdminUserDTO {
   email: string;
   firstName?: string | undefined;
   lastName?: string | undefined;
-  company?: string | undefined;
   tier: Tier;
-  role: 'member' | 'admin';
+  role: Role;
   registrationStatus: RegistrationStatus;
   invitationStatus: InvitationStatus;
   lastActiveAt?: string | undefined;
@@ -72,7 +73,7 @@ function buildFilter(
   if (query.tier) filter.tier = query.tier;
   if (query.search) {
     const rx = new RegExp(query.search, 'i');
-    filter.$or = [{ email: rx }, { firstName: rx }, { lastName: rx }, { company: rx }];
+    filter.$or = [{ email: rx }, { firstName: rx }, { lastName: rx }];
   }
   if (query.origin) filter.invitationStatus = query.origin;
   if (query.lastActive && query.lastActive !== 'any') {
@@ -88,7 +89,14 @@ function buildFilter(
 
 async function setTier(clerkId: string, tier: Tier): Promise<void> {
   await clerkClient.users.updateUserMetadata(clerkId, { publicMetadata: { tier } });
-  await userRepository.upsertByClerkId(clerkId, { tier });
+  const doc = await TierModel.findOne({ enum: tier }).select('_id');
+  await userRepository.upsertByClerkId(clerkId, { tier, ...(doc ? { tierId: doc._id } : {}) });
+}
+
+async function setRole(clerkId: string, role: Role): Promise<void> {
+  await clerkClient.users.updateUserMetadata(clerkId, { publicMetadata: { role } });
+  const doc = await RoleModel.findOne({ enum: role }).select('_id');
+  await userRepository.upsertByClerkId(clerkId, { role, ...(doc ? { roleId: doc._id } : {}) });
 }
 
 export interface BulkResult {
@@ -124,7 +132,6 @@ export const adminUsersService = {
       email: u.email,
       firstName: u.firstName,
       lastName: u.lastName,
-      company: u.company,
       tier: u.tier,
       role: u.role,
       registrationStatus: u.registrationStatus,
@@ -156,6 +163,20 @@ export const adminUsersService = {
     }
     await setTier(user.clerkId, tier);
     return { id: user.id, tier };
+  },
+
+  /**
+   * Assign a role. Writes Clerk publicMetadata.role (JWT source of truth) + the
+   * Mongo mirror (role enum + roleId). Behind the admin gate.
+   */
+  async updateRole(userId: string, role: Role): Promise<{ id: string; role: Role }> {
+    const user = await userRepository.findById(userId);
+    if (!user) throw ApiError.notFound('User not found');
+    if (!user.clerkId) {
+      throw ApiError.badRequest('Cannot change role: this member has not completed signup yet.');
+    }
+    await setRole(user.clerkId, role);
+    return { id: user.id, role };
   },
 
   /** Dry-run: validate a CSV and report per-row outcome WITHOUT applying. */
@@ -242,7 +263,6 @@ export const adminUsersService = {
       email: u.email,
       firstName: u.firstName ?? '',
       lastName: u.lastName ?? '',
-      company: u.company ?? '',
       tier: u.tier,
       role: u.role,
       status: deriveStatus(u.tier, u.registrationStatus, u.lastActiveAt, now),
@@ -253,7 +273,6 @@ export const adminUsersService = {
       'email',
       'firstName',
       'lastName',
-      'company',
       'tier',
       'role',
       'status',

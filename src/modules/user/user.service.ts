@@ -1,8 +1,10 @@
-import type { FilterQuery } from 'mongoose';
+import type { FilterQuery, Types } from 'mongoose';
 
+import { Role as RoleModel } from '@/modules/role/role.model';
+import { Tier as TierModel } from '@/modules/tier/tier.model';
 import { type UserDoc } from '@/modules/user/user.model';
 import { userRepository } from '@/modules/user/user.repository';
-import type { IUser, UserDTO } from '@/modules/user/user.types';
+import type { IUser, Role, Tier, UserDTO } from '@/modules/user/user.types';
 import type { ListUsersQuery } from '@/modules/user/user.validators';
 import { ApiError } from '@/utils/ApiError';
 
@@ -13,8 +15,6 @@ function toDTO(doc: UserDoc): UserDTO {
     email: doc.email,
     firstName: doc.firstName,
     lastName: doc.lastName,
-    company: doc.company,
-    jobTitle: doc.jobTitle,
     tier: doc.tier,
     role: doc.role,
     registrationStatus: doc.registrationStatus,
@@ -42,13 +42,22 @@ export interface ClerkUserData {
   first_name?: string | null;
   last_name?: string | null;
   public_metadata?: { tier?: string; role?: string } | undefined;
-  unsafe_metadata?: { company?: string; jobTitle?: string } | undefined;
 }
 
 function primaryEmail(data: ClerkUserData): string {
   const list = data.email_addresses ?? [];
   const primary = list.find((e) => e.id === data.primary_email_address_id) ?? list[0];
   return primary?.email_address ?? '';
+}
+
+/** Resolve the Role/Tier row id for an enum (undefined if the tables aren't seeded yet). */
+async function roleIdFor(value: Role): Promise<Types.ObjectId | undefined> {
+  const doc = await RoleModel.findOne({ enum: value }).select('_id');
+  return doc?._id;
+}
+async function tierIdFor(value: Tier): Promise<Types.ObjectId | undefined> {
+  const doc = await TierModel.findOne({ enum: value }).select('_id');
+  return doc?._id;
 }
 
 /** Business logic / use-cases for users. Orchestrates the repository; no DB queries here. */
@@ -71,7 +80,7 @@ export const userService = {
     if (query.role) filter.role = query.role;
     if (query.search) {
       const rx = new RegExp(query.search, 'i');
-      filter.$or = [{ email: rx }, { firstName: rx }, { lastName: rx }, { company: rx }];
+      filter.$or = [{ email: rx }, { firstName: rx }, { lastName: rx }];
     }
 
     const docs = await userRepository.findMany({
@@ -102,14 +111,19 @@ export const userService = {
     const tier = data.public_metadata?.tier;
     const role = data.public_metadata?.role;
     const email = primaryEmail(data);
+    const validTier =
+      tier === 'insight' || tier === 'mastery' || tier === 'sovereign' ? tier : undefined;
+    const validRole = role === 'member' || role === 'admin' ? role : undefined;
+    const roleId = validRole ? await roleIdFor(validRole) : undefined;
+    const tierId = validTier ? await tierIdFor(validTier) : undefined;
     const profile: Partial<IUser> = {
       email,
       firstName: data.first_name ?? undefined,
       lastName: data.last_name ?? undefined,
-      company: data.unsafe_metadata?.company ?? undefined,
-      jobTitle: data.unsafe_metadata?.jobTitle ?? undefined,
-      ...(tier === 'insight' || tier === 'mastery' || tier === 'sovereign' ? { tier } : {}),
-      ...(role === 'member' || role === 'admin' ? { role } : {}),
+      ...(validTier ? { tier: validTier } : {}),
+      ...(validRole ? { role: validRole } : {}),
+      ...(tierId ? { tierId } : {}),
+      ...(roleId ? { roleId } : {}),
     };
 
     // 1. Existing mirror (normal update / webhook retry).

@@ -1,6 +1,11 @@
 import { type HydratedDocument, model, Schema, type Types } from 'mongoose';
 
-export const EVENT_TYPES = ['heartbeat', 'complete', 'cert_download'] as const;
+export const EVENT_TYPES = [
+  'heartbeat',
+  'complete',
+  'cert_download',
+  'cert_download_error',
+] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 /** Analytics events feeding the admin dashboard (activity timeline, counters). */

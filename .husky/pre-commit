@@ -1,1 +1,12 @@
+# Run the lint/format gate on staged files — but only where Node is actually
+# runnable. GUI git clients (e.g. GitHub Desktop) launch hooks in a minimal
+# shell that can't execute node/npx from "C:\Program Files\nodejs" (the space in
+# the path breaks command lookup), producing a bogus "command not found" (127)
+# and blocking the commit. In that case, skip the gate and let the commit
+# proceed; terminal commits still run the full check.
+if ! npx --version >/dev/null 2>&1; then
+  echo "husky: npx not runnable in this environment (likely a GUI git client) — skipping lint-staged. Commit proceeds; run it from a terminal for the full lint/format check."
+  exit 0
+fi
+
 npx lint-staged

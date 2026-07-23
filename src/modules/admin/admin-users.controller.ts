@@ -4,6 +4,7 @@ import type {
   BulkCsv,
   IdParam,
   ListUsersAdminQuery,
+  RoleUpdate,
   TierUpdate,
 } from '@/modules/admin/admin.validators';
 import { adminUsersService } from '@/modules/admin/admin-users.service';
@@ -25,6 +26,12 @@ export const adminUsersController = {
     const { id } = req.validated?.params as IdParam;
     const { tier } = req.body as TierUpdate;
     sendSuccess(res, await adminUsersService.updateTier(id, tier));
+  }),
+
+  updateRole: asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.validated?.params as IdParam;
+    const { role } = req.body as RoleUpdate;
+    sendSuccess(res, await adminUsersService.updateRole(id, role));
   }),
 
   validateCsv: asyncHandler(async (req: Request, res: Response) => {

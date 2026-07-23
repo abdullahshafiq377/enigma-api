@@ -12,6 +12,7 @@
     "build": "tsup",
     "start": "node dist/server.js",
     "seed": "tsx src/scripts/seed.ts",
+    "seed-rbac": "tsx src/scripts/seed-rbac.ts",
     "make-admin": "tsx src/scripts/make-admin.ts",
     "seed-admin": "tsx src/scripts/seed-admin.ts",
     "seed-analytics": "tsx src/scripts/seed-analytics.ts",

@@ -15,6 +15,7 @@ import {
   processSchema,
   publishSchema,
   reorderSchema,
+  roleUpdateSchema,
   tierUpdateSchema,
   updateModuleSchema,
   updateVideoSchema,
@@ -59,6 +60,11 @@ router.patch(
   '/users/:id/tier',
   validate({ params: idParamSchema, body: tierUpdateSchema }),
   adminUsersController.updateTier,
+);
+router.patch(
+  '/users/:id/role',
+  validate({ params: idParamSchema, body: roleUpdateSchema }),
+  adminUsersController.updateRole,
 );
 
 // --- Member invitations (CSV onboarding) ---

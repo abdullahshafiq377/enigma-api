@@ -15,10 +15,12 @@ const userSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
     firstName: { type: String, trim: true },
     lastName: { type: String, trim: true },
-    company: { type: String, trim: true },
-    jobTitle: { type: String, trim: true },
     tier: { type: String, enum: TIERS, default: 'insight', index: true },
     role: { type: String, enum: ROLES, default: 'member' },
+    // Relational refs to the Role/Tier rows (assignment source of truth); the
+    // enum strings above are the synced cache read by auth/DTOs/filters.
+    roleId: { type: Schema.Types.ObjectId, ref: 'Role', index: true },
+    tierId: { type: Schema.Types.ObjectId, ref: 'Tier', index: true },
     registrationStatus: {
       type: String,
       enum: REGISTRATION_STATUSES,

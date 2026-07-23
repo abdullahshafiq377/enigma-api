@@ -11,7 +11,6 @@ function clerkPayload(overrides: Partial<ClerkUserData> = {}): ClerkUserData {
     first_name: 'Dana',
     last_name: 'Doe',
     public_metadata: { tier: 'mastery' },
-    unsafe_metadata: { company: 'Acme', jobTitle: 'PM' },
     ...overrides,
   };
 }
@@ -23,7 +22,6 @@ describe('userService.syncFromClerk', () => {
     expect(dto.clerkId).toBe('user_123');
     expect(dto.email).toBe('dana@enigma.test');
     expect(dto.tier).toBe('mastery');
-    expect(dto.company).toBe('Acme');
     expect(dto.registrationStatus).toBe('completed');
     expect(dto.invitationStatus).toBe('none');
     expect(await User.countDocuments()).toBe(1);
