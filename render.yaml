@@ -8,21 +8,23 @@
 services:
   - type: web
     name: enigma-api
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    plan: starter # bump to 'standard' if PDF/certificate generation (@react-pdf) OOMs
+    runtime: node
+    plan: free
     region: oregon # change to the region nearest your MongoDB Atlas cluster
     branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
 
     envVars:
       # ── Non-secret runtime config ──
+      - key: NODE_VERSION
+        value: 22 # package.json engines: node >= 22
+      - key: HUSKY
+        value: 0 # skip the `prepare` (husky) lifecycle script during build
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 8080 # must match EXPOSE/CMD in the Dockerfile
       - key: LOG_LEVEL
         value: info
       - key: TRANSCRIBE_LANGUAGE
