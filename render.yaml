@@ -1,0 +1,72 @@
+# Render Blueprint for the Enigma backend (Express 5 + MongoDB).
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Deploy: push this file, then create a Blueprint instance from the repo in the
+# Render dashboard. Values marked `sync: false` are prompted for on first deploy
+# (or set later under Environment) so secrets never land in the repo.
+
+services:
+  - type: web
+    name: enigma-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter # bump to 'standard' if PDF/certificate generation (@react-pdf) OOMs
+    region: oregon # change to the region nearest your MongoDB Atlas cluster
+    branch: main
+    healthCheckPath: /health
+    autoDeploy: true
+
+    envVars:
+      # ── Non-secret runtime config ──
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080 # must match EXPOSE/CMD in the Dockerfile
+      - key: LOG_LEVEL
+        value: info
+      - key: TRANSCRIBE_LANGUAGE
+        value: en-US
+      # Update both to your deployed frontend URL(s). CORS_ORIGINS is comma-separated.
+      - key: CORS_ORIGINS
+        value: https://your-frontend.example.com
+      - key: APP_BASE_URL
+        value: https://your-frontend.example.com
+
+      # ── Required secret ──
+      - key: MONGODB_URL
+        sync: false
+
+      # ── Clerk auth ──
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_WEBHOOK_SIGNING_SECRET
+        sync: false
+
+      # ── AWS (S3 / MediaConvert / Transcribe / CloudFront) ──
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_S3_INPUT_BUCKET
+        sync: false
+      - key: AWS_S3_OUTPUT_BUCKET
+        sync: false
+      - key: MEDIACONVERT_ROLE_ARN
+        sync: false
+      - key: MEDIACONVERT_QUEUE_ARN
+        sync: false
+
+      # ── CloudFront signed cookies ──
+      - key: CLOUDFRONT_DOMAIN
+        sync: false
+      - key: CLOUDFRONT_KEY_PAIR_ID
+        sync: false
+      - key: CLOUDFRONT_PRIVATE_KEY # RSA private key PEM (literal "\n" supported)
+        sync: false
+      - key: COOKIE_DOMAIN # parent domain, e.g. ".enigma.edu"
+        sync: false
