@@ -12,7 +12,9 @@ services:
     plan: free
     region: oregon # change to the region nearest your MongoDB Atlas cluster
     branch: main
-    buildCommand: npm ci && npm run build
+    # --include=dev is required: NODE_ENV=production makes npm ci skip
+    # devDependencies, which drops tsup/typescript (build) and husky (prepare).
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
