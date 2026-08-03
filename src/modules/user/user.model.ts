@@ -15,8 +15,10 @@ const userSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
     firstName: { type: String, trim: true },
     lastName: { type: String, trim: true },
+    company: { type: String, trim: true },
+    jobTitle: { type: String, trim: true },
     tier: { type: String, enum: TIERS, default: 'insight', index: true },
-    role: { type: String, enum: ROLES, default: 'member' },
+    role: { type: String, enum: ROLES, default: 'member', index: true },
     // Relational refs to the Role/Tier rows (assignment source of truth); the
     // enum strings above are the synced cache read by auth/DTOs/filters.
     roleId: { type: Schema.Types.ObjectId, ref: 'Role', index: true },
@@ -28,11 +30,15 @@ const userSchema = new Schema<IUser>(
       index: true,
     },
     invitationStatus: { type: String, enum: INVITATION_STATUSES, default: 'none', index: true },
+    // True when the account originated from an admin invitation (link or matched
+    // self-signup); false for a pure self-signup. Set at join time by syncFromClerk.
+    joinedByInvite: { type: Boolean, default: false, index: true },
     invitedAt: { type: Date },
     acceptedAt: { type: Date },
     clerkInvitationId: { type: String },
     resendCount: { type: Number, default: 0 },
-    lastActiveAt: { type: Date },
+    // Indexed: drives the active/inactive status filter (buildFilter + deriveStatus).
+    lastActiveAt: { type: Date, index: true },
   },
   { timestamps: true },
 );

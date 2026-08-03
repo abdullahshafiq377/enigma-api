@@ -58,7 +58,7 @@ async function run(): Promise<void> {
     tier: 'sovereign',
   });
   logger.info(`Mongo mirror reconciled: ${email} → role=admin, tier=sovereign`);
-  logger.info('Done. Log in at http://localhost:3000/admin/login');
+  logger.info('Done. Log in at http://localhost:5001/sign-in');
 
   await disconnectDatabase();
 }

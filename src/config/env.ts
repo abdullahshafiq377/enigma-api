@@ -17,7 +17,7 @@ const envSchema = z.object({
   // Comma-separated list of allowed CORS origins (frontend URLs).
   CORS_ORIGINS: z
     .string()
-    .default('http://localhost:3000')
+    .default('http://localhost:5001')
     .transform((value) =>
       value
         .split(',')
@@ -28,7 +28,7 @@ const envSchema = z.object({
   MONGODB_URL: z.string().min(1, 'MONGODB_URL is required'),
 
   // Public base URL of the frontend — used as the invitation accept/redirect target.
-  APP_BASE_URL: z.string().url().default('http://localhost:3000'),
+  APP_BASE_URL: z.string().url().default('http://localhost:5001'),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
@@ -51,6 +51,12 @@ const envSchema = z.object({
   MEDIACONVERT_ROLE_ARN: z.string().optional(),
   MEDIACONVERT_QUEUE_ARN: z.string().optional(),
   TRANSCRIBE_LANGUAGE: z.string().default('en-US'),
+
+  // --- Transactional email (AWS SES) ---
+  // Verified SES sender, e.g. "invites@krewclub.co". When unset, invite emails are
+  // skipped (no-op) — invitations are still created with their link.
+  EMAIL_FROM: z.string().email().optional(),
+  EMAIL_REPLY_TO: z.string().email().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -1,6 +1,10 @@
 import { CreateJobCommand } from '@aws-sdk/client-mediaconvert';
 import { CopyObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { type LanguageCode, StartTranscriptionJobCommand } from '@aws-sdk/client-transcribe';
+import {
+  GetTranscriptionJobCommand,
+  type LanguageCode,
+  StartTranscriptionJobCommand,
+} from '@aws-sdk/client-transcribe';
 import { getSignedCookies, getSignedUrl as getCfSignedUrl } from '@aws-sdk/cloudfront-signer';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -142,5 +146,23 @@ export const mediaService = {
         LanguageCode: env.TRANSCRIBE_LANGUAGE as LanguageCode,
       }),
     );
+  },
+
+  /** Poll a Transcribe job's status (QUEUED | IN_PROGRESS | COMPLETED | FAILED). */
+  async getTranscriptionStatus(jobName: string): Promise<string> {
+    const res = await getTranscribe().send(
+      new GetTranscriptionJobCommand({ TranscriptionJobName: jobName }),
+    );
+    return res.TranscriptionJob?.TranscriptionJobStatus ?? 'UNKNOWN';
+  },
+
+  /** Fetch + parse a JSON object stored in the output bucket. */
+  async getOutputJson(key: string): Promise<unknown> {
+    if (!env.AWS_S3_OUTPUT_BUCKET) throw ApiError.internal('AWS_S3_OUTPUT_BUCKET not configured');
+    const res = await getS3().send(
+      new GetObjectCommand({ Bucket: env.AWS_S3_OUTPUT_BUCKET, Key: key }),
+    );
+    const text = (await res.Body?.transformToString()) ?? '{}';
+    return JSON.parse(text);
   },
 };

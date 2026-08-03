@@ -83,7 +83,7 @@ async function run(): Promise<void> {
   logger.info(`  ADMIN READY`);
   logger.info(`  email:    ${email}`);
   logger.info(`  password: ${password}`);
-  logger.info(`  login:    http://localhost:3000/admin/login`);
+  logger.info(`  login:    http://localhost:5001/sign-in`);
   logger.info('──────────────────────────────────────────');
 
   await disconnectDatabase();

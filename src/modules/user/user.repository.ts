@@ -54,6 +54,11 @@ export const userRepository = {
     ).exec() as Promise<UserDoc>;
   },
 
+  /** Update a mirror row by `_id` — used for members with no clerkId yet. */
+  updateById(id: string, data: Partial<IUser>): Promise<UserDoc | null> {
+    return User.findByIdAndUpdate(id, { $set: data }, { new: true }).exec() as Promise<UserDoc | null>;
+  },
+
   async deleteByClerkId(clerkId: string): Promise<void> {
     await User.deleteOne({ clerkId }).exec();
   },

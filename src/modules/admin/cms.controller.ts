@@ -9,6 +9,8 @@ import type {
   Process,
   Publish,
   Reorder,
+  TranscribeJobParam,
+  TranscribeStart,
   UpdateModule,
   UpdateVideo,
   UploadUrl,
@@ -37,6 +39,10 @@ export const cmsController = {
   reorderModules: asyncHandler(async (req: Request, res: Response) => {
     await cmsService.reorderModules((req.body as Reorder).items);
     sendSuccess(res, { ok: true });
+  }),
+  deleteModule: asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.validated?.params as IdParam;
+    sendSuccess(res, await cmsService.deleteModule(id));
   }),
 
   // Videos
@@ -81,5 +87,14 @@ export const cmsController = {
   processVideo: asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.validated?.params as IdParam;
     sendSuccess(res, toVideoDTO(await cmsService.processVideo(id, (req.body as Process).inputKey)));
+  }),
+
+  // Transcript (Add-video wizard): start a job, then poll it.
+  startTranscript: asyncHandler(async (req: Request, res: Response) => {
+    sendSuccess(res, await cmsService.startTranscript((req.body as TranscribeStart).inputKey));
+  }),
+  getTranscript: asyncHandler(async (req: Request, res: Response) => {
+    const { jobName } = req.validated?.params as TranscribeJobParam;
+    sendSuccess(res, await cmsService.getTranscript(jobName));
   }),
 };

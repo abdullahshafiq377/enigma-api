@@ -1,5 +1,6 @@
 import { connectDatabase, disconnectDatabase } from '@/config/db';
 import { logger } from '@/config/logger';
+import { Invitation } from '@/modules/invitation/invitation.model';
 import { User } from '@/modules/user/user.model';
 
 /**
@@ -17,8 +18,10 @@ import { User } from '@/modules/user/user.model';
  */
 async function main(): Promise<void> {
   await connectDatabase();
-  const dropped = await User.syncIndexes();
-  logger.info({ dropped }, 'User indexes synced (stale indexes dropped, schema indexes rebuilt)');
+  const userDropped = await User.syncIndexes();
+  logger.info({ dropped: userDropped }, 'User indexes synced');
+  const inviteDropped = await Invitation.syncIndexes();
+  logger.info({ dropped: inviteDropped }, 'Invitation indexes synced');
   await disconnectDatabase();
 }
 

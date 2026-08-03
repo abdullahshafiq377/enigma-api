@@ -16,6 +16,11 @@ export interface IPdfResource {
   key: string;
 }
 
+export interface ITranscriptLine {
+  startSec: number;
+  text: string;
+}
+
 export interface IVideo {
   moduleId: Types.ObjectId;
   title: string;
@@ -30,6 +35,8 @@ export interface IVideo {
   status: VideoStatus;
   captionsKey?: string | undefined;
   transcriptKey?: string | undefined;
+  /** Admin-curated transcript segments (from Amazon Transcribe, editable). */
+  transcript?: ITranscriptLine[] | undefined;
   chapters: IChapter[];
   pdfResources: IPdfResource[];
 }
@@ -48,6 +55,7 @@ const videoSchema = new Schema<IVideo>(
     status: { type: String, enum: VIDEO_STATUSES, default: 'processing', index: true },
     captionsKey: { type: String },
     transcriptKey: { type: String },
+    transcript: { type: [{ startSec: Number, text: String }], default: undefined },
     chapters: [{ startSec: Number, title: String }],
     pdfResources: [{ title: String, key: String }],
   },

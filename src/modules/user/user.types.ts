@@ -24,6 +24,8 @@ export interface IUser {
   email: string;
   firstName?: string | undefined;
   lastName?: string | undefined;
+  company?: string | undefined;
+  jobTitle?: string | undefined;
   tier: Tier;
   role: Role;
   /**
@@ -35,6 +37,12 @@ export interface IUser {
   tierId?: Types.ObjectId | undefined;
   registrationStatus: RegistrationStatus;
   invitationStatus: InvitationStatus;
+  /**
+   * True when this account came from an admin invitation — whether they joined via
+   * the invite link OR self-signed-up with an email an admin had invited. False for
+   * a pure self-signup with no matching invitation.
+   */
+  joinedByInvite: boolean;
   invitedAt?: Date | undefined;
   acceptedAt?: Date | undefined;
   clerkInvitationId?: string | undefined;

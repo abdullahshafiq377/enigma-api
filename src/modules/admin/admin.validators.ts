@@ -39,12 +39,33 @@ export const bulkCsvSchema = z.object({
 export const inviteCsvSchema = bulkCsvSchema;
 export type InviteCsv = z.infer<typeof inviteCsvSchema>;
 
+/**
+ * Unified "member access" CSV (update tiers + invite). Tier is detected per-row
+ * server-side (regex + aliases). The optional `mapping` overrides which CSV header
+ * feeds each field (Map step), and `tierValues` assigns/skips unrecognized tier
+ * values (e.g. { "gold": "mastery", "tier 2": "skip" }).
+ */
+export const bulkAccessCsvSchema = z.object({
+  csv: z.string().min(1),
+  mapping: z
+    .object({
+      email: z.string().optional(),
+      name: z.string().optional(),
+      company: z.string().optional(),
+      tier: z.string().optional(),
+    })
+    .optional(),
+  tierValues: z.record(z.string(), z.union([z.enum(TIERS), z.literal('skip')])).optional(),
+});
+export type BulkAccessCsv = z.infer<typeof bulkAccessCsvSchema>;
+
 export const createModuleSchema = z.object({
   title: z.string().min(1),
   slug: z.string().min(1),
   order: z.number().int(),
   description: z.string().optional(),
   isPublished: z.boolean().optional(),
+  tier: z.enum(VIDEO_TIERS).optional(), // access tier all its videos inherit (default 'free')
 });
 export const updateModuleSchema = createModuleSchema.partial();
 
@@ -53,15 +74,23 @@ export const createVideoSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   order: z.number().int(),
-  tier: z.enum(VIDEO_TIERS),
+  // No tier here — a video inherits its module's tier on create (see cmsService.createVideo).
   durationSec: z.number().nonnegative().optional(),
   // "Add video" wizard extras:
   publish: z.boolean().optional(), // Save & publish (true) vs Save as draft (false)
   inputKey: z.string().optional(), // uploaded source video S3 key → triggers transcode
+  thumbnailInputKey: z.string().optional(), // uploaded poster image S3 key → copied to CDN
+  transcript: z
+    .array(z.object({ startSec: z.number().nonnegative(), text: z.string() }))
+    .optional(), // admin-curated transcript segments
   resources: z
     .array(z.object({ title: z.string().min(1), inputKey: z.string().min(1) }))
     .optional(), // uploaded PDF resources
 });
+
+// Transcript generation (Add-video wizard): start a job, then poll it.
+export const transcribeStartSchema = z.object({ inputKey: z.string().min(1) });
+export const transcribeJobParamSchema = z.object({ jobName: z.string().min(1) });
 export const updateVideoSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().optional(),
@@ -97,3 +126,5 @@ export type Publish = z.infer<typeof publishSchema>;
 export type Process = z.infer<typeof processSchema>;
 export type AttachPdf = z.infer<typeof attachPdfSchema>;
 export type ModuleIdQuery = z.infer<typeof moduleIdQuerySchema>;
+export type TranscribeStart = z.infer<typeof transcribeStartSchema>;
+export type TranscribeJobParam = z.infer<typeof transcribeJobParamSchema>;

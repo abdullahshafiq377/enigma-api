@@ -22,51 +22,60 @@ interface SeedModule {
   description: string;
   videoTier: VideoTier;
   videoCount: number;
+  /** Core = fixed top slot; title tracks order and is reorderable only among peers. */
+  isCore: boolean;
   /** Make the module's last lesson an unpublished draft with no video file (demo "needs attention"). */
   draftLast?: boolean;
 }
 
+// Modules 1–5 are the fixed core block: their titles are just "Module N" and
+// track their order. "Partner Track" is an extra module below the divider.
 const SEED: SeedModule[] = [
   {
-    title: 'Module 1 — Foundations',
+    title: 'Module 1',
     slug: 'foundations',
     order: 1,
     description: 'Core concepts that anchor the curriculum.',
     videoTier: 'free',
     videoCount: 3,
+    isCore: true,
   },
   {
-    title: 'Module 2 — Applied Practice',
+    title: 'Module 2',
     slug: 'applied-practice',
     order: 2,
     description: 'Turning theory into skill.',
     videoTier: 'free',
     videoCount: 3,
+    isCore: true,
   },
   {
-    title: 'Module 3 — Going Deeper',
+    title: 'Module 3',
     slug: 'going-deeper',
     order: 3,
     description: 'Intermediate techniques.',
     videoTier: 'free',
     videoCount: 3,
+    isCore: true,
     draftLast: true,
   },
   {
-    title: 'Module 4 — Advanced Topics',
+    title: 'Module 4',
     slug: 'advanced-topics',
     order: 4,
     description: 'Advanced material for committed learners.',
     videoTier: 'free',
     videoCount: 3,
+    isCore: true,
   },
   {
-    title: 'Module 5 — Mastery',
+    title: 'Module 5',
     slug: 'mastery',
     order: 5,
     description: 'Capstone modules and premium resources.',
     videoTier: 'paid',
     videoCount: 3,
+    isCore: true,
     draftLast: true,
   },
   {
@@ -76,6 +85,7 @@ const SEED: SeedModule[] = [
     description: 'Partner-specific content.',
     videoTier: 'partner',
     videoCount: 2,
+    isCore: false,
   },
 ];
 
@@ -95,6 +105,9 @@ async function seed(): Promise<void> {
       order: m.order,
       description: m.description,
       isPublished: true,
+      isCore: m.isCore,
+      tier: m.videoTier, // module owns the access tier; its videos inherit it
+      isSystem: true, // seeded modules are protected from edit/delete
     });
 
     const videos = Array.from({ length: m.videoCount }, (_, i) => {

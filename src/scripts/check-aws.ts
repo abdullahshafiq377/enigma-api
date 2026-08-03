@@ -11,14 +11,37 @@ import { mediaService } from '@/modules/media/media.service';
  * both buckets, MediaConvert + Transcribe access, S3 presigning, and that the
  * CloudFront signing key parses. Makes NO writes / no jobs. Run: `npm run check-aws`.
  */
-async function check(name: string, fn: () => Promise<void>): Promise<boolean> {
+type CheckResult = 'pass' | 'fail' | 'net';
+
+/**
+ * True for local connectivity failures (DNS/socket) — NOT AWS auth results. These
+ * make a run unreliable: a network error must never be mistaken for "authorized".
+ */
+function isNetworkError(err: unknown): boolean {
+  const e = err as {
+    name?: string;
+    code?: string;
+    message?: string;
+    cause?: { code?: string; message?: string };
+  };
+  const sig = `${e.name ?? ''} ${e.code ?? ''} ${e.message ?? ''} ${e.cause?.code ?? ''} ${e.cause?.message ?? ''}`;
+  return /ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|getaddrinfo|socket hang up|TimeoutError/i.test(
+    sig,
+  );
+}
+
+async function check(name: string, fn: () => Promise<void>): Promise<CheckResult> {
   try {
     await fn();
     console.log(`  ✓ ${name}`);
-    return true;
+    return 'pass';
   } catch (err) {
+    if (isNetworkError(err)) {
+      console.log(`  ⚠ ${name}\n      NETWORK error (result unreliable): ${(err as Error).message}`);
+      return 'net';
+    }
     console.log(`  ✗ ${name}\n      ${(err as Error).name}: ${(err as Error).message}`);
-    return false;
+    return 'fail';
   }
 }
 
@@ -28,7 +51,7 @@ async function main(): Promise<void> {
   console.log(`Output bucket: ${env.AWS_S3_OUTPUT_BUCKET ?? '(unset)'}`);
   console.log(`isAwsConfigured: ${isAwsConfigured()}\n`);
 
-  const results: boolean[] = [];
+  const results: CheckResult[] = [];
 
   // PutObject + GetObject round-trip on a fixed probe key (overwritten each run, no
   // accumulation). Uses only the granted object perms; catches region mismatch
@@ -62,8 +85,10 @@ async function main(): Promise<void> {
           new CreateJobCommand({ Role: env.MEDIACONVERT_ROLE_ARN ?? 'none', Settings: {} }),
         );
       } catch (err) {
+        // A network error must surface (not be read as "authorized"); so must auth errors.
         const sig = `${(err as Error).name} ${(err as Error).message}`;
         if (
+          isNetworkError(err) ||
           /AccessDenied|NotAuthorized|Subscription|UnrecognizedClient|InvalidSignature/i.test(sig)
         ) {
           throw err;
@@ -72,7 +97,7 @@ async function main(): Promise<void> {
     }),
   );
   results.push(
-    await check('Transcribe — GetTranscriptionJob authorized', async () => {
+    await check('Transcribe — reachable (GetJob only; job-start needs the account subscription)', async () => {
       try {
         await getTranscribe().send(
           new GetTranscriptionJobCommand({
@@ -82,7 +107,8 @@ async function main(): Promise<void> {
       } catch (err) {
         // "not found / bad request" = authorized (the job just doesn't exist) → OK.
         const sig = `${(err as Error).name} ${(err as Error).message}`;
-        if (/AccessDenied|NotAuthorized|UnrecognizedClient|InvalidSignature/i.test(sig)) throw err;
+        if (isNetworkError(err) || /AccessDenied|NotAuthorized|UnrecognizedClient|InvalidSignature/i.test(sig))
+          throw err;
       }
     }),
   );
@@ -93,9 +119,18 @@ async function main(): Promise<void> {
     }),
   );
 
-  const ok = results.filter(Boolean).length;
-  console.log(`\n${ok}/${results.length} checks passed.\n`);
-  process.exit(ok === results.length ? 0 : 1);
+  const pass = results.filter((r) => r === 'pass').length;
+  const net = results.filter((r) => r === 'net').length;
+  console.log(`\n${pass}/${results.length} checks passed.`);
+  if (net > 0) {
+    console.log(
+      `\n⚠ ${net} check(s) hit a NETWORK error — THIS RUN IS UNRELIABLE (not an AWS result).\n` +
+        `  Fix your connection/DNS (e.g. ipconfig /flushdns, disable VPN), then re-run.\n` +
+        `  Only trust the MediaConvert/Transcribe rows when the S3 rows are ✓.`,
+    );
+  }
+  console.log('');
+  process.exit(pass === results.length ? 0 : 1);
 }
 
 main().catch((err) => {

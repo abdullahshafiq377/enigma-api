@@ -246,12 +246,45 @@ describe('adminUsersService.exportCsv', () => {
     const csv = await adminUsersService.exportCsv({ tier: 'mastery' }, NOW);
     const lines = csv.trim().split('\n');
     expect(lines[0]).toBe(
-      'email,firstName,lastName,tier,role,status,invitationStatus,lastActiveAt',
+      'email,firstName,lastName,company,jobTitle,tier,role,status,invitationStatus,lastActiveAt',
     );
     expect(lines).toHaveLength(3); // header + ben + dan
     expect(csv).toContain('ben@beta.com');
     expect(csv).toContain('dan@beta.com');
     expect(csv).not.toContain('ana@enigma.com');
+  });
+});
+
+describe('adminUsersService.getDetail', () => {
+  it('returns profile + createdAt + cert count + null progress when no content', async () => {
+    const user = await User.create({
+      clerkId: 'cd1',
+      email: 'detail@enigma.com',
+      firstName: 'Del',
+      lastName: 'Tail',
+      company: 'Placeholder Co.',
+      jobTitle: 'Analyst',
+      tier: 'insight',
+      lastActiveAt: daysAgo(2),
+    });
+    const detail = await adminUsersService.getDetail(user.id, NOW);
+    expect(detail).toMatchObject({
+      id: user.id,
+      email: 'detail@enigma.com',
+      company: 'Placeholder Co.',
+      jobTitle: 'Analyst',
+      tier: 'insight',
+      status: 'active',
+      certificatesEarned: 0,
+      progress: null, // no published modules seeded
+    });
+    expect(typeof detail.createdAt).toBe('string');
+  });
+
+  it('404s for an unknown id', async () => {
+    await expect(adminUsersService.getDetail('64b7f0000000000000000000', NOW)).rejects.toMatchObject(
+      { statusCode: 404 },
+    );
   });
 });
 

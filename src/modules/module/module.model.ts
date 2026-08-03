@@ -1,5 +1,7 @@
 import { type HydratedDocument, model, Schema } from 'mongoose';
 
+import { VIDEO_TIERS, type VideoTier } from '@/modules/video/video.model';
+
 export interface IModule {
   title: string;
   slug: string;
@@ -7,6 +9,21 @@ export interface IModule {
   description?: string | undefined;
   coverAssetKey?: string | undefined;
   isPublished: boolean;
+  /**
+   * Core modules are the fixed top slots whose title is position-derived
+   * ("Module 1"…"Module N"): the server relabels them to match their order on
+   * every reorder, and they can only be reordered among themselves. Extra
+   * modules (isCore=false) keep their own titles and live below the core block.
+   */
+  isCore: boolean;
+  /**
+   * Access tier the module belongs to. This is the source of truth for access:
+   * every video in the module INHERITS this tier on creation, so the admin sets
+   * access once per module rather than per video.
+   */
+  tier: VideoTier;
+  /** Seeded/system module — protected: the admin can't edit or delete it. */
+  isSystem: boolean;
 }
 
 const moduleSchema = new Schema<IModule>(
@@ -17,6 +34,9 @@ const moduleSchema = new Schema<IModule>(
     description: { type: String, trim: true },
     coverAssetKey: { type: String, trim: true },
     isPublished: { type: Boolean, default: false },
+    isCore: { type: Boolean, default: false },
+    tier: { type: String, enum: VIDEO_TIERS, default: 'paid' },
+    isSystem: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

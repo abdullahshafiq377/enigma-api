@@ -5,6 +5,7 @@ import { validate } from '@/middlewares/validate';
 import {
   activityQuerySchema,
   attachPdfSchema,
+  bulkAccessCsvSchema,
   bulkCsvSchema,
   createModuleSchema,
   createVideoSchema,
@@ -17,6 +18,8 @@ import {
   reorderSchema,
   roleUpdateSchema,
   tierUpdateSchema,
+  transcribeJobParamSchema,
+  transcribeStartSchema,
   updateModuleSchema,
   updateVideoSchema,
   uploadUrlSchema,
@@ -24,7 +27,13 @@ import {
 import { adminInvitationsController } from '@/modules/admin/admin-invitations.controller';
 import { adminUsersController } from '@/modules/admin/admin-users.controller';
 import { analyticsController } from '@/modules/admin/analytics.controller';
+import { bulkAccessController } from '@/modules/admin/bulk-access.controller';
 import { cmsController } from '@/modules/admin/cms.controller';
+import { invitationController } from '@/modules/invitation/invitation.controller';
+import {
+  bulkInvitationSchema,
+  createInvitationSchema,
+} from '@/modules/invitation/invitation.validators';
 
 const router = Router();
 
@@ -50,6 +59,8 @@ router.get(
   validate({ query: listUsersAdminQuerySchema }),
   adminUsersController.exportCsv,
 );
+// `/users/:id` MUST come after the literal `/users/*` GETs above so it doesn't shadow them.
+router.get('/users/:id', validate({ params: idParamSchema }), adminUsersController.detail);
 router.post(
   '/users/bulk-csv/validate',
   validate({ body: bulkCsvSchema }),
@@ -89,6 +100,26 @@ router.post(
   adminInvitationsController.revoke,
 );
 
+// --- Member invitations (table-backed: the new Invitation collection) ---
+router.post('/invitations', validate({ body: createInvitationSchema }), invitationController.create);
+router.post(
+  '/invitations/bulk',
+  validate({ body: bulkInvitationSchema }),
+  invitationController.createBulk,
+);
+
+// --- Unified member-access CSV (update tiers + invite in one upload) ---
+router.post(
+  '/access/bulk-csv/validate',
+  validate({ body: bulkAccessCsvSchema }),
+  bulkAccessController.validate,
+);
+router.post(
+  '/access/bulk-csv/apply',
+  validate({ body: bulkAccessCsvSchema }),
+  bulkAccessController.apply,
+);
+
 // --- CMS: catalog overview (stat cards + per-module summaries) ---
 router.get('/cms/overview', cmsController.overview);
 
@@ -101,6 +132,7 @@ router.patch(
   validate({ params: idParamSchema, body: updateModuleSchema }),
   cmsController.updateModule,
 );
+router.delete('/modules/:id', validate({ params: idParamSchema }), cmsController.deleteModule);
 
 // --- CMS: videos ---
 router.get('/videos', validate({ query: moduleIdQuerySchema }), cmsController.listVideos);
@@ -129,5 +161,13 @@ router.post(
 
 // --- CMS: uploads ---
 router.post('/media/upload-url', validate({ body: uploadUrlSchema }), cmsController.uploadUrl);
+
+// --- CMS: transcript (start a job, then poll it) ---
+router.post('/transcribe', validate({ body: transcribeStartSchema }), cmsController.startTranscript);
+router.get(
+  '/transcribe/:jobName',
+  validate({ params: transcribeJobParamSchema }),
+  cmsController.getTranscript,
+);
 
 export default router;

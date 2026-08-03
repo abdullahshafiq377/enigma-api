@@ -22,6 +22,11 @@ export const adminUsersController = {
     sendSuccess(res, await adminUsersService.stats());
   }),
 
+  detail: asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.validated?.params as IdParam;
+    sendSuccess(res, await adminUsersService.getDetail(id));
+  }),
+
   updateTier: asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.validated?.params as IdParam;
     const { tier } = req.body as TierUpdate;

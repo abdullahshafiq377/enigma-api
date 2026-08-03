@@ -2,6 +2,7 @@ import { Router } from 'express';
 
 import adminRoutes from '@/modules/admin/admin.routes';
 import certificateRoutes from '@/modules/certificate/certificate.routes';
+import invitationRoutes from '@/modules/invitation/invitation.routes';
 import moduleRoutes from '@/modules/module/module.routes';
 import progressRoutes from '@/modules/progress/progress.routes';
 import userRoutes from '@/modules/user/user.routes';
@@ -16,6 +17,7 @@ v1Router.use('/modules', moduleRoutes);
 v1Router.use('/videos', videoRoutes);
 v1Router.use('/progress', progressRoutes);
 v1Router.use('/certificates', certificateRoutes);
+v1Router.use('/invitations', invitationRoutes);
 v1Router.use('/admin', adminRoutes);
 v1Router.use('/webhooks', webhookRoutes);
 

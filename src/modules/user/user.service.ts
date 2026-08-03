@@ -1,5 +1,6 @@
 import type { FilterQuery, Types } from 'mongoose';
 
+import { invitationRepository } from '@/modules/invitation/invitation.repository';
 import { Role as RoleModel } from '@/modules/role/role.model';
 import { Tier as TierModel } from '@/modules/tier/tier.model';
 import { type UserDoc } from '@/modules/user/user.model';
@@ -15,10 +16,13 @@ function toDTO(doc: UserDoc): UserDTO {
     email: doc.email,
     firstName: doc.firstName,
     lastName: doc.lastName,
+    company: doc.company,
+    jobTitle: doc.jobTitle,
     tier: doc.tier,
     role: doc.role,
     registrationStatus: doc.registrationStatus,
     invitationStatus: doc.invitationStatus,
+    joinedByInvite: doc.joinedByInvite,
     invitedAt: doc.invitedAt,
     acceptedAt: doc.acceptedAt,
     clerkInvitationId: doc.clerkInvitationId,
@@ -42,6 +46,9 @@ export interface ClerkUserData {
   first_name?: string | null;
   last_name?: string | null;
   public_metadata?: { tier?: string; role?: string } | undefined;
+  // Sign-up collects these and passes them via Clerk unsafeMetadata; the client
+  // promotes them to publicMetadata (or they arrive here) so the mirror persists them.
+  unsafe_metadata?: { company?: string; jobTitle?: string } | undefined;
 }
 
 function primaryEmail(data: ClerkUserData): string {
@@ -80,7 +87,7 @@ export const userService = {
     if (query.role) filter.role = query.role;
     if (query.search) {
       const rx = new RegExp(query.search, 'i');
-      filter.$or = [{ email: rx }, { firstName: rx }, { lastName: rx }];
+      filter.$or = [{ email: rx }, { firstName: rx }, { lastName: rx }, { company: rx }, { jobTitle: rx }];
     }
 
     const docs = await userRepository.findMany({
@@ -101,60 +108,87 @@ export const userService = {
 
   /**
    * Reconcile the Mongo mirror from a Clerk `user.created`/`user.updated` payload.
-   * Order matters:
-   *  1. Already mirrored by clerkId → update in place (idempotent, handles `user.updated`).
-   *  2. A pending invitation exists for this email (no clerkId yet) → complete it
-   *     (invited → registration_completed), attaching the new clerkId.
-   *  3. Otherwise a fresh self-signup → create with invitationStatus 'none'.
+   * User-row resolution (order matters):
+   *  1. Already mirrored by clerkId → update in place (idempotent, handles retries).
+   *  2. A legacy pending placeholder row for this email (no clerkId) → complete it.
+   *  3. Otherwise a fresh signup → create it.
+   *
+   * Independently, the table-backed `invitations` collection (matched by email) is
+   * the source of truth for an invited person's TIER, and is flipped
+   * `invited → joined` here. This runs whether they used the invite link OR signed
+   * up normally with an invited email.
    */
   async syncFromClerk(data: ClerkUserData): Promise<UserDTO> {
-    const tier = data.public_metadata?.tier;
     const role = data.public_metadata?.role;
     const email = primaryEmail(data);
-    const validTier =
-      tier === 'insight' || tier === 'mastery' || tier === 'sovereign' ? tier : undefined;
     const validRole = role === 'member' || role === 'admin' ? role : undefined;
     const roleId = validRole ? await roleIdFor(validRole) : undefined;
-    const tierId = validTier ? await tierIdFor(validTier) : undefined;
+    const company = data.unsafe_metadata?.company?.trim() || undefined;
+    const jobTitle = data.unsafe_metadata?.jobTitle?.trim() || undefined;
+
+    // Admin's invitation (new table) wins for tier; else Clerk metadata; else default.
+    const invitation = email ? await invitationRepository.findByEmail(email) : null;
+    const metaTier = data.public_metadata?.tier;
+    const validMetaTier =
+      metaTier === 'insight' || metaTier === 'mastery' || metaTier === 'sovereign'
+        ? metaTier
+        : undefined;
+    const resolvedTier = invitation?.tier ?? validMetaTier;
+    const tierId = resolvedTier ? await tierIdFor(resolvedTier) : undefined;
+
     const profile: Partial<IUser> = {
       email,
       firstName: data.first_name ?? undefined,
       lastName: data.last_name ?? undefined,
-      ...(validTier ? { tier: validTier } : {}),
+      ...(company ? { company } : {}),
+      ...(jobTitle ? { jobTitle } : {}),
+      ...(resolvedTier ? { tier: resolvedTier } : {}),
       ...(validRole ? { role: validRole } : {}),
       ...(tierId ? { tierId } : {}),
       ...(roleId ? { roleId } : {}),
     };
 
-    // 1. Existing mirror (normal update / webhook retry).
+    let user: UserDoc;
     const byClerk = await userRepository.findByClerkId(data.id);
     if (byClerk) {
+      // 1. Existing mirror (normal update / webhook retry).
       Object.assign(byClerk, profile);
       await byClerk.save();
-      return toDTO(byClerk);
+      user = byClerk;
+    } else {
+      const placeholder = email ? await userRepository.findByEmail(email) : null;
+      if (placeholder && !placeholder.clerkId) {
+        // 2. Legacy pending placeholder row (old Clerk-invitation flow) → complete it.
+        Object.assign(placeholder, profile, {
+          clerkId: data.id,
+          registrationStatus: 'completed',
+          invitationStatus: 'registration_completed',
+          joinedByInvite: true,
+          acceptedAt: new Date(),
+        });
+        await placeholder.save();
+        user = placeholder;
+      } else {
+        // 3. Fresh signup — self-serve OR a table-backed invite (no users placeholder).
+        user = await userRepository.upsertByClerkId(data.id, {
+          clerkId: data.id,
+          ...profile,
+          registrationStatus: 'completed',
+          invitationStatus: invitation ? 'registration_completed' : 'none',
+          joinedByInvite: Boolean(invitation),
+          ...(invitation ? { acceptedAt: new Date() } : {}),
+        });
+      }
     }
 
-    // 2. Pending invitation for this email → complete it.
-    const invited = email ? await userRepository.findByEmail(email) : null;
-    if (invited && !invited.clerkId) {
-      Object.assign(invited, profile, {
-        clerkId: data.id,
-        registrationStatus: 'completed',
-        invitationStatus: 'registration_completed',
-        acceptedAt: new Date(),
-      });
-      await invited.save();
-      return toDTO(invited);
+    // Flip the table-backed invitation to joined (idempotent across webhook retries).
+    if (invitation && invitation.status === 'invited') {
+      invitation.status = 'joined';
+      invitation.joinedAt = new Date();
+      await invitation.save();
     }
 
-    // 3. Fresh self-signup.
-    const doc = await userRepository.upsertByClerkId(data.id, {
-      clerkId: data.id,
-      ...profile,
-      registrationStatus: 'completed',
-      invitationStatus: 'none',
-    });
-    return toDTO(doc);
+    return toDTO(user);
   },
 
   async removeByClerkId(clerkId: string): Promise<void> {

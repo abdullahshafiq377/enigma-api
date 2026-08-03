@@ -2,10 +2,14 @@ import { clerkClient } from '@clerk/express';
 import type { FilterQuery } from 'mongoose';
 
 import { parseCsv, toCsv } from '@/modules/admin/csv';
+import { certificateRepository } from '@/modules/certificate/certificate.repository';
+import { moduleRepository } from '@/modules/module/module.repository';
+import { progressRepository } from '@/modules/progress/progress.repository';
 import { Role as RoleModel } from '@/modules/role/role.model';
 import { Tier as TierModel } from '@/modules/tier/tier.model';
 import { User } from '@/modules/user/user.model';
 import { userRepository } from '@/modules/user/user.repository';
+import { videoRepository } from '@/modules/video/video.repository';
 import type { InvitationStatus, IUser, RegistrationStatus } from '@/modules/user/user.types';
 import { type Role, type Tier, TIERS } from '@/modules/user/user.types';
 import { ApiError } from '@/utils/ApiError';
@@ -46,12 +50,30 @@ export interface AdminUserDTO {
   email: string;
   firstName?: string | undefined;
   lastName?: string | undefined;
+  company?: string | undefined;
+  jobTitle?: string | undefined;
   tier: Tier;
   role: Role;
   registrationStatus: RegistrationStatus;
   invitationStatus: InvitationStatus;
   lastActiveAt?: string | undefined;
   status: UserStatus;
+}
+
+/** One module's progress for the member-details modal's PROGRESS block. */
+export interface UserProgressBlock {
+  moduleTitle: string;
+  moduleOrder: number;
+  videoCount: number;
+  completedCount: number;
+  coveragePct: number; // 0–100, avg per-video coverage across the module's published videos
+}
+
+/** Full single-user payload for the admin "Member details" modal. */
+export interface AdminUserDetailDTO extends AdminUserDTO {
+  createdAt: string;
+  certificatesEarned: number;
+  progress: UserProgressBlock | null;
 }
 
 export interface AdminUserListQuery {
@@ -73,7 +95,13 @@ function buildFilter(
   if (query.tier) filter.tier = query.tier;
   if (query.search) {
     const rx = new RegExp(query.search, 'i');
-    filter.$or = [{ email: rx }, { firstName: rx }, { lastName: rx }];
+    filter.$or = [
+      { email: rx },
+      { firstName: rx },
+      { lastName: rx },
+      { company: rx },
+      { jobTitle: rx },
+    ];
   }
   if (query.origin) filter.invitationStatus = query.origin;
   if (query.lastActive && query.lastActive !== 'any') {
@@ -132,6 +160,8 @@ export const adminUsersService = {
       email: u.email,
       firstName: u.firstName,
       lastName: u.lastName,
+      company: u.company,
+      jobTitle: u.jobTitle,
       tier: u.tier,
       role: u.role,
       registrationStatus: u.registrationStatus,
@@ -155,13 +185,73 @@ export const adminUsersService = {
     return { total, byTier, recentlyActive };
   },
 
+  /**
+   * Full details for one member (the "Member details" modal): profile + status +
+   * date joined + certificate count + a PROGRESS block for their current module
+   * (the first published module they haven't fully completed, else the last one).
+   */
+  async getDetail(userId: string, now: number = Date.now()): Promise<AdminUserDetailDTO> {
+    const user = await userRepository.findById(userId);
+    if (!user) throw ApiError.notFound('User not found');
+
+    const certs = await certificateRepository.findByUser(userId);
+
+    const modules = await moduleRepository.findAllPublished();
+    let progress: UserProgressBlock | null = null;
+    let fallback: UserProgressBlock | null = null;
+    for (const m of modules) {
+      const videos = await videoRepository.findPublishedByModule(m.id);
+      if (videos.length === 0) continue;
+      const videoIds = videos.map((v) => v.id);
+      const progressDocs = await progressRepository.findManyByUserAndVideos(userId, videoIds);
+      const completedCount = progressDocs.filter((p) => p.completed).length;
+      const coverageSum = progressDocs.reduce((s, p) => s + (p.coveragePct ?? 0), 0);
+      const block: UserProgressBlock = {
+        moduleTitle: m.title,
+        moduleOrder: m.order,
+        videoCount: videos.length,
+        completedCount,
+        coveragePct: Math.round((coverageSum / videos.length) * 100),
+      };
+      fallback = block; // remember the last module seen as a fallback
+      if (completedCount < videos.length) {
+        progress = block; // first not-yet-complete module = the one they're "on"
+        break;
+      }
+    }
+    if (!progress) progress = fallback; // everything complete (or single) → last module
+
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      company: user.company,
+      jobTitle: user.jobTitle,
+      tier: user.tier,
+      role: user.role,
+      registrationStatus: user.registrationStatus,
+      invitationStatus: user.invitationStatus,
+      lastActiveAt: user.lastActiveAt?.toISOString(),
+      status: deriveStatus(user.tier, user.registrationStatus, user.lastActiveAt, now),
+      createdAt: user.createdAt.toISOString(),
+      certificatesEarned: certs.length,
+      progress,
+    };
+  },
+
   async updateTier(userId: string, tier: Tier): Promise<{ id: string; tier: Tier }> {
     const user = await userRepository.findById(userId);
     if (!user) throw ApiError.notFound('User not found');
-    if (!user.clerkId) {
-      throw ApiError.badRequest('Cannot change tier: this member has not completed signup yet.');
+    if (user.clerkId) {
+      // Signed-up member: Clerk publicMetadata is the JWT source of truth.
+      await setTier(user.clerkId, tier);
+    } else {
+      // Mirror-only member (invited or seeded, no Clerk account yet): update the
+      // mirror directly. The tier carries over when they complete signup.
+      const doc = await TierModel.findOne({ enum: tier }).select('_id');
+      await userRepository.updateById(user.id, { tier, ...(doc ? { tierId: doc._id } : {}) });
     }
-    await setTier(user.clerkId, tier);
     return { id: user.id, tier };
   },
 
@@ -263,6 +353,8 @@ export const adminUsersService = {
       email: u.email,
       firstName: u.firstName ?? '',
       lastName: u.lastName ?? '',
+      company: u.company ?? '',
+      jobTitle: u.jobTitle ?? '',
       tier: u.tier,
       role: u.role,
       status: deriveStatus(u.tier, u.registrationStatus, u.lastActiveAt, now),
@@ -273,6 +365,8 @@ export const adminUsersService = {
       'email',
       'firstName',
       'lastName',
+      'company',
+      'jobTitle',
       'tier',
       'role',
       'status',

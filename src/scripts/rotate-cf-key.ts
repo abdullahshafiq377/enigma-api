@@ -46,9 +46,10 @@ function main(): void {
   console.log('\n✓ Wrote new CLOUDFRONT_PRIVATE_KEY into .env (private key NOT shown).\n');
   console.log('Upload THIS public key in CloudFront → Key management → Create public key:\n');
   console.log(publicKey.trim());
-  console.log('\nThen:');
-  console.log('  1. Add that new public key to the key group on distribution E2VQ8X1HSF8X85.');
-  console.log('  2. Set CLOUDFRONT_KEY_PAIR_ID in .env to the NEW key ID it gives you.');
+  console.log('\nThen (see DOCS/AWS-SETUP.md for the full walkthrough):');
+  console.log('  1. Create a CloudFront public key with the block above; add it to the key');
+  console.log("     group that's set as the distribution's Trusted key group.");
+  console.log('  2. Set CLOUDFRONT_KEY_PAIR_ID in .env to the NEW public key ID it gives you.');
   console.log('  3. Restart the backend, then run: npm run check-protection  (expect 3/3).\n');
 }
 

@@ -74,3 +74,11 @@ services:
         sync: false
       - key: COOKIE_DOMAIN # parent domain, e.g. ".enigma.edu"
         sync: false
+
+      # ── Transactional email (AWS SES) — invitation emails ──
+      # Optional: when EMAIL_FROM is unset the app still creates invitations + links,
+      # it just skips sending. Set EMAIL_FROM to a VERIFIED SES sender to enable email.
+      - key: EMAIL_FROM # verified SES sender, e.g. invites@yourdomain.com
+        sync: false
+      - key: EMAIL_REPLY_TO # optional reply-to address
+        sync: false
