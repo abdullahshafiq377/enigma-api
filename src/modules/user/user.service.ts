@@ -48,7 +48,9 @@ export interface ClerkUserData {
   public_metadata?: { tier?: string; role?: string } | undefined;
   // Sign-up collects these and passes them via Clerk unsafeMetadata; the client
   // promotes them to publicMetadata (or they arrive here) so the mirror persists them.
-  unsafe_metadata?: { company?: string; jobTitle?: string } | undefined;
+  unsafe_metadata?:
+    | { company?: string; companyWebsite?: string; jobTitle?: string }
+    | undefined;
 }
 
 function primaryEmail(data: ClerkUserData): string {
@@ -124,6 +126,7 @@ export const userService = {
     const validRole = role === 'member' || role === 'admin' ? role : undefined;
     const roleId = validRole ? await roleIdFor(validRole) : undefined;
     const company = data.unsafe_metadata?.company?.trim() || undefined;
+    const companyWebsite = data.unsafe_metadata?.companyWebsite?.trim() || undefined;
     const jobTitle = data.unsafe_metadata?.jobTitle?.trim() || undefined;
 
     // Admin's invitation (new table) wins for tier; else Clerk metadata; else default.
@@ -141,6 +144,7 @@ export const userService = {
       firstName: data.first_name ?? undefined,
       lastName: data.last_name ?? undefined,
       ...(company ? { company } : {}),
+      ...(companyWebsite ? { companyWebsite } : {}),
       ...(jobTitle ? { jobTitle } : {}),
       ...(resolvedTier ? { tier: resolvedTier } : {}),
       ...(validRole ? { role: validRole } : {}),

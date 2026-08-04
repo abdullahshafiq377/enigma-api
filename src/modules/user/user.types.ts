@@ -25,6 +25,8 @@ export interface IUser {
   firstName?: string | undefined;
   lastName?: string | undefined;
   company?: string | undefined;
+  /** Normalized host (`abc.com`) the work email was verified against at sign-up. */
+  companyWebsite?: string | undefined;
   jobTitle?: string | undefined;
   tier: Tier;
   role: Role;

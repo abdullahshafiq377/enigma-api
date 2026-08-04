@@ -16,6 +16,7 @@ const userSchema = new Schema<IUser>(
     firstName: { type: String, trim: true },
     lastName: { type: String, trim: true },
     company: { type: String, trim: true },
+    companyWebsite: { type: String, trim: true, lowercase: true },
     jobTitle: { type: String, trim: true },
     tier: { type: String, enum: TIERS, default: 'insight', index: true },
     role: { type: String, enum: ROLES, default: 'member', index: true },
