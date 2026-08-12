@@ -8,9 +8,9 @@ import type { Tier } from '@/modules/user/user.types';
 
 /**
  * Unified "CSV member access" flow. Per row it either UPDATES an existing member's
- * tier or INVITES a new email at that tier. Email is mandatory; tier is detected
- * per-row by a case-insensitive keyword scan (NOT trusting the column alone), with
- * the video-tier names accepted as aliases.
+ * tier or INVITES a new email at that tier. Email is mandatory; the tier is read
+ * from the mapped tier column ONLY, by a case-insensitive keyword scan of that
+ * cell, with the video-tier names accepted as aliases.
  */
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -147,9 +147,15 @@ function resolveColumns(headers: string[], mapping: ColumnMapping | undefined): 
 type TierState = 'ok' | 'skip-value' | 'unrecognized' | 'none';
 
 /**
- * Row tier: an explicit tier-column value is authoritative — matched keyword, an
- * admin assignment (`tierValues`), 'skip', else "unrecognized". Only when there's no
- * explicit value do we scan the whole row (so we don't rely on the column alone).
+ * Row tier, read from the mapped tier column and nowhere else — matched keyword,
+ * an admin assignment (`tierValues`), 'skip', else "unrecognized"; an empty cell
+ * is 'none'.
+ *
+ * This used to fall back to scanning every column when the tier cell was empty,
+ * which meant a job title "Partner Manager", a company "Free Agency" or a note
+ * "paid via invoice" silently set someone's access — unflagged, so the preview
+ * showed a confident tier nobody had asked for. The Map step now names the tier
+ * column explicitly, so that column is the only source.
  */
 function rowTier(
   row: Record<string, string>,
@@ -157,19 +163,13 @@ function rowTier(
   tierValues: TierAssignments,
 ): { tier: Tier | null; raw: string; state: TierState } {
   const raw = tierHeader ? (row[tierHeader] ?? '').trim() : '';
-  if (raw) {
-    const matched = matchTier(raw);
-    if (matched) return { tier: matched, raw, state: 'ok' };
-    const assigned = tierValues[raw.toLowerCase()];
-    if (assigned === 'skip') return { tier: null, raw, state: 'skip-value' };
-    if (assigned) return { tier: assigned, raw, state: 'ok' };
-    return { tier: null, raw, state: 'unrecognized' };
-  }
-  for (const value of Object.values(row)) {
-    const matched = matchTier(value);
-    if (matched) return { tier: matched, raw: '', state: 'ok' };
-  }
-  return { tier: null, raw: '', state: 'none' };
+  if (!raw) return { tier: null, raw: '', state: 'none' };
+  const matched = matchTier(raw);
+  if (matched) return { tier: matched, raw, state: 'ok' };
+  const assigned = tierValues[raw.toLowerCase()];
+  if (assigned === 'skip') return { tier: null, raw, state: 'skip-value' };
+  if (assigned) return { tier: assigned, raw, state: 'ok' };
+  return { tier: null, raw, state: 'unrecognized' };
 }
 
 function tierLabel(tier: Tier): string {

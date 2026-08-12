@@ -106,6 +106,41 @@ describe('bulkAccessService.validate — tier value review', () => {
     expect(columns.tier).toEqual({ header: 'membership level', match: 'fuzzy' });
   });
 
+  it('never reads a tier from any column but the mapped one', async () => {
+    // Every one of these used to set a tier off the back of an unrelated cell,
+    // and none of them was flagged. The tier column is empty in all four.
+    const csv = [
+      'email,tier,company,job title,notes',
+      'a@x.com,,Enigma Partner,Engineer,',
+      'b@x.com,,Acme,Partner Manager,',
+      'c@x.com,,Free Agency,Engineer,',
+      'd@x.com,,Acme,Engineer,paid via invoice',
+    ].join('\n');
+
+    const { rows } = await bulkAccessService.validate(csv);
+
+    // None inherits a tier from company / job title / notes; all four are new
+    // emails, so they invite at the Insight default WITH the warning flag.
+    for (const r of rows) {
+      expect(r).toMatchObject({ status: 'invite', newTier: 'insight', usedDefault: true });
+      expect(r.message).toBe('No tier in row — defaulting to Insight');
+    }
+  });
+
+  it('leaves an existing member untouched when the tier cell is empty', async () => {
+    const csv = ['email,tier,company', 'member@x.com,,Enigma Partner'].join('\n');
+
+    const { rows } = await bulkAccessService.validate(csv);
+
+    // "Enigma Partner" must not promote an Insight member to Sovereign.
+    expect(rows[0]).toMatchObject({
+      status: 'skip',
+      currentTier: 'insight',
+      newTier: null,
+      message: 'No tier in row',
+    });
+  });
+
   it('reads the tier from an admin override rather than the auto-detected column', async () => {
     // Auto-detection would take "level" for the tier (its matcher includes
     // `level`); the override points it at "plan" instead.
