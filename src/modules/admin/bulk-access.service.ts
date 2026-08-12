@@ -95,27 +95,43 @@ function matchTier(value: string): Tier | null {
   return m ? (TIER_ALIASES[m[1]!.toLowerCase()] ?? null) : null;
 }
 
-const FIELD_MATCHERS: Record<keyof BulkAccessColumns, { exact: string[]; re: RegExp }> = {
-  email: { exact: ['email', 'e-mail', 'work email'], re: /e-?mail/ },
-  name: { exact: ['name', 'full name', 'fullname'], re: /name/ },
+/**
+ * Known synonyms for each field, tried before the regex so a well-named column
+ * wins over a merely plausible one. They are NOT exact matches — see resolve().
+ * The field's own name is not listed: it is checked first, by name.
+ */
+const FIELD_MATCHERS: Record<keyof BulkAccessColumns, { alias: string[]; re: RegExp }> = {
+  email: { alias: ['e-mail', 'work email'], re: /e-?mail/ },
+  name: { alias: ['full name', 'fullname'], re: /name/ },
   company: {
-    exact: ['company', 'organization', 'organisation', 'org'],
+    alias: ['organization', 'organisation', 'org'],
     re: /company|organi[sz]|org\b/,
   },
   tier: {
-    exact: ['tier', 'access tier', 'plan', 'level'],
+    alias: ['access tier', 'plan', 'level'],
     re: /tier|access|plan|level|membership/,
   },
 };
 
-/** Resolve each field to a CSV header — admin override (manual) → exact → fuzzy → none. */
+/**
+ * Resolve each field to a CSV header — admin override (manual) → the field's
+ * own name (exact) → a synonym or a regex hit (fuzzy) → none.
+ *
+ * "Exact" means the header IS the field name. 959:647 is explicit about it:
+ * "Company" reads EXACT MATCH — "matched exactly word by word" — while
+ * "Full Name" and "Access Tier" read FUZZY MATCH. A synonym resolves the column
+ * just as confidently, but it is not the same words, and saying so was telling
+ * admins their file matched exactly when it did not.
+ */
 function resolveColumns(headers: string[], mapping: ColumnMapping | undefined): BulkAccessColumns {
   const resolve = (field: keyof BulkAccessColumns): ResolvedColumn => {
     const override = mapping?.[field];
     if (override && headers.includes(override)) return { header: override, match: 'manual' };
-    const { exact, re } = FIELD_MATCHERS[field];
-    const ex = headers.find((h) => exact.includes(h));
-    if (ex) return { header: ex, match: 'exact' };
+    // parseCsv lowercases every header, and the field keys are lowercase.
+    if (headers.includes(field)) return { header: field, match: 'exact' };
+    const { alias, re } = FIELD_MATCHERS[field];
+    const al = headers.find((h) => alias.includes(h));
+    if (al) return { header: al, match: 'fuzzy' };
     const fz = headers.find((h) => re.test(h));
     if (fz) return { header: fz, match: 'fuzzy' };
     return { header: null, match: 'none' };

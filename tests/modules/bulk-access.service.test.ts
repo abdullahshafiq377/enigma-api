@@ -75,6 +75,37 @@ describe('bulkAccessService.validate — tier value review', () => {
     expect(unrecognizedTiers).toEqual([]);
   });
 
+  it('calls a header exact only when it IS the field name, and a synonym fuzzy', async () => {
+    // 959:647 draws this file: Company matches word for word, Full Name and
+    // Access Tier resolve just as confidently but are not the same words.
+    const csv = ['full name,email,access tier,company', 'Ada,a@x.com,Insight,Acme'].join('\n');
+
+    const { columns } = await bulkAccessService.validate(csv);
+
+    expect(columns.email).toEqual({ header: 'email', match: 'exact' });
+    expect(columns.company).toEqual({ header: 'company', match: 'exact' });
+    expect(columns.name).toEqual({ header: 'full name', match: 'fuzzy' });
+    expect(columns.tier).toEqual({ header: 'access tier', match: 'fuzzy' });
+  });
+
+  it('prefers the field name over a synonym that appears earlier in the file', async () => {
+    const csv = ['work email,email,tier', 'nope@x.com,a@x.com,Insight'].join('\n');
+
+    const { columns, rows } = await bulkAccessService.validate(csv);
+
+    expect(columns.email).toEqual({ header: 'email', match: 'exact' });
+    expect(rows[0]).toMatchObject({ email: 'a@x.com' });
+  });
+
+  it('falls back to the regex when neither the name nor a synonym is present', async () => {
+    const csv = ['contact e-mail,membership level', 'a@x.com,Insight'].join('\n');
+
+    const { columns } = await bulkAccessService.validate(csv);
+
+    expect(columns.email).toEqual({ header: 'contact e-mail', match: 'fuzzy' });
+    expect(columns.tier).toEqual({ header: 'membership level', match: 'fuzzy' });
+  });
+
   it('reads the tier from an admin override rather than the auto-detected column', async () => {
     // Auto-detection would take "level" for the tier (its matcher includes
     // `level`); the override points it at "plan" instead.
