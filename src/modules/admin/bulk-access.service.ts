@@ -98,8 +98,14 @@ function matchTier(value: string): Tier | null {
 const FIELD_MATCHERS: Record<keyof BulkAccessColumns, { exact: string[]; re: RegExp }> = {
   email: { exact: ['email', 'e-mail', 'work email'], re: /e-?mail/ },
   name: { exact: ['name', 'full name', 'fullname'], re: /name/ },
-  company: { exact: ['company', 'organization', 'organisation', 'org'], re: /company|organi[sz]|org\b/ },
-  tier: { exact: ['tier', 'access tier', 'plan', 'level'], re: /tier|access|plan|level|membership/ },
+  company: {
+    exact: ['company', 'organization', 'organisation', 'org'],
+    re: /company|organi[sz]|org\b/,
+  },
+  tier: {
+    exact: ['tier', 'access tier', 'plan', 'level'],
+    re: /tier|access|plan|level|membership/,
+  },
 };
 
 /** Resolve each field to a CSV header — admin override (manual) → exact → fuzzy → none. */
@@ -178,7 +184,8 @@ export const bulkAccessService = {
 
     // Normalize tier assignments to lowercase keys (rowTier looks up lowercased).
     const tierValues: TierAssignments = {};
-    for (const [k, v] of Object.entries(opts.tierValues ?? {})) tierValues[k.toLowerCase().trim()] = v;
+    for (const [k, v] of Object.entries(opts.tierValues ?? {}))
+      tierValues[k.toLowerCase().trim()] = v;
 
     const emailKey = columns.email.header;
     const nameKey = columns.name.header;
@@ -187,7 +194,9 @@ export const bulkAccessService = {
 
     // Resolve email per row (mapped column, else the first email-looking cell).
     const emailFor = (row: Record<string, string>): string => {
-      const raw = emailKey ? row[emailKey] : Object.values(row).find((v) => EMAIL_RE.test(v.trim()));
+      const raw = emailKey
+        ? row[emailKey]
+        : Object.values(row).find((v) => EMAIL_RE.test(v.trim()));
       return (raw ?? '').toLowerCase().trim();
     };
 
@@ -202,7 +211,23 @@ export const bulkAccessService = {
     const byEmail = new Map(existing.map((u) => [u.email, u]));
     const invByEmail = new Map(invitations.map((inv) => [inv.email, inv]));
 
-    const unrecognized = new Map<string, number>();
+    // Unrecognized tier values are counted over the WHOLE file, in their own
+    // pass. Doing it inside the row loop below missed every row that returns
+    // early — a duplicate or unreadable email — so a value appearing twice in
+    // the file could report one row. This card answers "what is in the file",
+    // not "what will change"; the preview and the validate step answer that.
+    // Grouped case-insensitively, because tierValues is looked up lowercased:
+    // "Pro" and "pro" are one value to assign, so they are one row here too.
+    const unrecognized = new Map<string, { value: string; rows: number }>();
+    for (const row of parsed) {
+      const t = rowTier(row, tierKey, tierValues);
+      if (t.state !== 'unrecognized') continue;
+      const key = t.raw.toLowerCase();
+      const entry = unrecognized.get(key);
+      if (entry) entry.rows += 1;
+      else unrecognized.set(key, { value: t.raw, rows: 1 });
+    }
+
     const seen = new Set<string>();
     const rows: BulkAccessRow[] = parsed.map((row, i) => {
       const n = i + 1;
@@ -217,7 +242,6 @@ export const bulkAccessService = {
       seen.add(email);
 
       const t = rowTier(row, tierKey, tierValues);
-      if (t.state === 'unrecognized') unrecognized.set(t.raw, (unrecognized.get(t.raw) ?? 0) + 1);
       const user = byEmail.get(email);
       const isMember = !!user && user.registrationStatus === 'completed';
 
@@ -233,7 +257,13 @@ export const bulkAccessService = {
           return { ...base, currentTier, status: 'skip', message };
         }
         if (t.tier === currentTier) {
-          return { ...base, currentTier, newTier: t.tier, status: 'skip', message: `Already ${tierLabel(t.tier)}` };
+          return {
+            ...base,
+            currentTier,
+            newTier: t.tier,
+            status: 'skip',
+            message: `Already ${tierLabel(t.tier)}`,
+          };
         }
         const change = TIER_RANK[t.tier] > TIER_RANK[currentTier] ? 'upgrade' : 'downgrade';
         return {
@@ -247,15 +277,22 @@ export const bulkAccessService = {
       }
 
       // Not a completed member → invite or re-invite.
-      if (t.state === 'unrecognized') return { ...base, status: 'skip', message: `Unrecognized tier "${t.raw}"` };
-      if (t.state === 'skip-value') return { ...base, status: 'skip', message: `Skipped tier "${t.raw}"` };
+      if (t.state === 'unrecognized')
+        return { ...base, status: 'skip', message: `Unrecognized tier "${t.raw}"` };
+      if (t.state === 'skip-value')
+        return { ...base, status: 'skip', message: `Skipped tier "${t.raw}"` };
       const invitation = invByEmail.get(email);
       if (invitation?.status === 'joined') {
         return { ...base, status: 'skip', message: 'Already joined' };
       }
       if (invitation) {
         const reTier: Tier = t.tier ?? invitation.tier;
-        return { ...base, newTier: reTier, status: 'reinvite', message: `Re-inviting at ${tierLabel(reTier)}` };
+        return {
+          ...base,
+          newTier: reTier,
+          status: 'reinvite',
+          message: `Re-inviting at ${tierLabel(reTier)}`,
+        };
       }
       const newTier: Tier = t.tier ?? 'insight';
       const usedDefault = !t.tier;
@@ -270,11 +307,13 @@ export const bulkAccessService = {
       };
     });
 
-    const unrecognizedTiers = [...unrecognized.entries()].map(([value, count]) => ({
-      value,
-      rows: count,
-    }));
-    return { rows, summary: summarize(rows), headers, columns, unrecognizedTiers };
+    return {
+      rows,
+      summary: summarize(rows),
+      headers,
+      columns,
+      unrecognizedTiers: [...unrecognized.values()],
+    };
   },
 
   /**
@@ -287,10 +326,24 @@ export const bulkAccessService = {
     invitedByAdminId: string,
     opts: BulkAccessOptions = {},
   ): Promise<{
-    summary: { total: number; updated: number; invited: number; resent: number; skipped: number; failed: number };
+    summary: {
+      total: number;
+      updated: number;
+      invited: number;
+      resent: number;
+      skipped: number;
+      failed: number;
+    };
   }> {
     const { rows } = await this.validate(csvText, opts);
-    const summary = { total: rows.length, updated: 0, invited: 0, resent: 0, skipped: 0, failed: 0 };
+    const summary = {
+      total: rows.length,
+      updated: 0,
+      invited: 0,
+      resent: 0,
+      skipped: 0,
+      failed: 0,
+    };
 
     for (const row of rows) {
       if (row.status === 'error') {
