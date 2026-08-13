@@ -66,6 +66,8 @@ export const createModuleSchema = z.object({
   description: z.string().optional(),
   isPublished: z.boolean().optional(),
   tier: z.enum(VIDEO_TIERS).optional(), // access tier all its videos inherit (default 'free')
+  // Partner modules only: the Sovereign members it is assigned to. [] = all of them.
+  assignedUserIds: z.array(objectId).optional(),
 });
 export const updateModuleSchema = createModuleSchema.partial();
 

@@ -99,6 +99,8 @@ export interface AdminModuleSummary {
   isSystem: boolean;
   /** Access tier the module (and every video in it) belongs to. */
   tier: VideoTier;
+  /** Partner modules only: assigned Sovereign members. [] = all of them. */
+  assignedUserIds: string[];
   videoCount: number;
   publishedCount: number;
   status: ModuleCmsStatus;
@@ -268,6 +270,7 @@ export const cmsService = {
         isCore: m.isCore,
         isSystem: m.isSystem,
         tier: m.tier,
+        assignedUserIds: (m.assignedUserIds ?? []).map(String),
         videoCount: vids.length,
         publishedCount,
         status,
@@ -299,7 +302,12 @@ export const cmsService = {
     // assigned server-side (max + 1) rather than trusting the client's guess.
     const [last] = await Module.find().sort({ order: -1 }).limit(1).select('order').lean();
     const order = (last?.order ?? 0) + 1;
-    return Module.create({ isPublished: false, ...input, order, isCore: false }) as Promise<ModuleDoc>;
+    return Module.create({
+      isPublished: false,
+      ...input,
+      order,
+      isCore: false,
+    }) as Promise<ModuleDoc>;
   },
 
   async updateModule(id: string, patch: UpdateModuleInput): Promise<ModuleDoc> {
@@ -470,7 +478,9 @@ export const cmsService = {
   async reorderVideos(items: ReorderItem[]): Promise<void> {
     if (!items.length) return;
     await Video.bulkWrite(
-      items.map((i) => ({ updateOne: { filter: { _id: i.id }, update: { $set: { order: i.order } } } })),
+      items.map((i) => ({
+        updateOne: { filter: { _id: i.id }, update: { $set: { order: i.order } } },
+      })),
     );
   },
 
@@ -502,7 +512,13 @@ export const cmsService = {
     } catch (err) {
       const e = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
       logger.error(
-        { name: e.name, status: e.$metadata?.httpStatusCode, message: e.message, inputKey, jobName },
+        {
+          name: e.name,
+          status: e.$metadata?.httpStatusCode,
+          message: e.message,
+          inputKey,
+          jobName,
+        },
         '[transcribe] StartTranscriptionJob FAILED',
       );
       throw err;

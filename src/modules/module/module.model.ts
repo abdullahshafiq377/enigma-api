@@ -1,4 +1,4 @@
-import { type HydratedDocument, model, Schema } from 'mongoose';
+import { type HydratedDocument, model, Schema, type Types } from 'mongoose';
 
 import { VIDEO_TIERS, type VideoTier } from '@/modules/video/video.model';
 
@@ -22,6 +22,12 @@ export interface IModule {
    * access once per module rather than per video.
    */
   tier: VideoTier;
+  /**
+   * Partner modules can be narrowed to named Sovereign members. An empty array
+   * is the dialog's "All selected" state — every Sovereign member. Meaningful
+   * only while `tier === 'partner'`; stored, not yet enforced by access checks.
+   */
+  assignedUserIds: Types.ObjectId[];
   /** Seeded/system module — protected: the admin can't edit or delete it. */
   isSystem: boolean;
 }
@@ -36,6 +42,7 @@ const moduleSchema = new Schema<IModule>(
     isPublished: { type: Boolean, default: false },
     isCore: { type: Boolean, default: false },
     tier: { type: String, enum: VIDEO_TIERS, default: 'paid' },
+    assignedUserIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     isSystem: { type: Boolean, default: false },
   },
   { timestamps: true },
