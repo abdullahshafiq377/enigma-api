@@ -20,6 +20,8 @@ export interface CreateModuleInput {
   isPublished?: boolean | undefined;
   /** Access tier all videos in the module inherit (defaults to 'paid'). */
   tier?: VideoTier | undefined;
+  /** Partner modules only: the Sovereign members to assign. [] = all of them. */
+  assignedUserIds?: string[] | undefined;
 }
 
 export interface CreateVideoInput {
@@ -48,6 +50,7 @@ export interface UpdateModuleInput {
   description?: string | undefined;
   isPublished?: boolean | undefined;
   tier?: VideoTier | undefined;
+  assignedUserIds?: string[] | undefined;
 }
 
 export interface UpdateVideoInput {
