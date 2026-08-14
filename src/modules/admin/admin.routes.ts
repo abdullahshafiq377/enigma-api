@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '@/middlewares/auth';
 import { validate } from '@/middlewares/validate';
 import {
   activityQuerySchema,
+  analyticsRangeSchema,
   attachPdfSchema,
   bulkAccessCsvSchema,
   bulkCsvSchema,
@@ -41,10 +42,11 @@ const router = Router();
 router.use(requireAuth, requireRole('admin'));
 
 // --- Analytics ---
-router.get('/analytics/overview', analyticsController.overview);
-router.get('/analytics/module-completion', analyticsController.moduleCompletion);
-router.get('/analytics/video-rankings', analyticsController.videoRankings);
-router.get('/analytics/certificates', analyticsController.certificates);
+const withRange = validate({ query: analyticsRangeSchema });
+router.get('/analytics/overview', withRange, analyticsController.overview);
+router.get('/analytics/module-completion', withRange, analyticsController.moduleCompletion);
+router.get('/analytics/video-rankings', withRange, analyticsController.videoRankings);
+router.get('/analytics/certificates', withRange, analyticsController.certificates);
 router.get(
   '/analytics/activity',
   validate({ query: activityQuerySchema }),

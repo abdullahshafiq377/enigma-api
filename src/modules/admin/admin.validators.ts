@@ -10,6 +10,16 @@ export type IdParam = z.infer<typeof idParamSchema>;
 
 export const activityQuerySchema = z.object({
   granularity: z.enum(['day', 'week', 'month']).optional(),
+  /* IANA zone for the day view's four-hour blocks — they are clock times, so
+     "12AM" only means anything against a zone. Validated in the service, which
+     falls back to UTC rather than rejecting. */
+  tz: z.string().max(64).optional(),
+});
+
+/* The analytics screen's date chips. Omitted means all time, which is what
+   these endpoints returned before the chips were wired up. */
+export const analyticsRangeSchema = z.object({
+  range: z.enum(['7d', '30d', '90d', 'all']).optional(),
 });
 
 export const listUsersAdminQuerySchema = z.object({

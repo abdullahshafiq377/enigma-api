@@ -14,7 +14,8 @@ import { Video } from '@/modules/video/video.model';
 /**
  * Seeds synthetic analytics data so the admin dashboard is populated:
  * members (by tier) + watch progress + completions + certificates + downloads,
- * dated across the last ~4 weeks so the activity timeline shows multiple bars.
+ * dated across the last ~5 months so the activity timeline shows multiple bars
+ * AND the screen's 7/30/90-day chips each land on a different number.
  *
  * Dev-only + idempotent: clears synthetic users (clerkId `seed_*`) and ALL
  * progress/certificates/events, then regenerates. Does NOT touch real
@@ -32,6 +33,40 @@ const TIER_WEIGHTS: Array<[Tier, number]> = [
 const rand = (min: number, max: number) => Math.random() * (max - min) + min;
 const randInt = (min: number, max: number) => Math.floor(rand(min, max + 1));
 const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+
+/**
+ * How old a seeded record is, in days, drawn from bands rather than one flat
+ * range.
+ *
+ * This matters for the analytics screen's date chips. Everything used to land
+ * inside 28 days and members carried no explicit `createdAt` at all, so all
+ * three chips reported the same figures — which is what made the range control
+ * look broken even after it was wired up.
+ *
+ * The bands put roughly a quarter inside 7 days, half inside 30, nine tenths
+ * inside 90, and leave the rest older still so all-time stays above every
+ * window. Each chip lands on a visibly different number.
+ */
+const AGE_BANDS: Array<[minDays: number, maxDays: number, weight: number]> = [
+  [0, 6, 25],
+  [7, 29, 30],
+  [30, 89, 35],
+  [90, 150, 10],
+];
+
+function ageInDays(): number {
+  const total = AGE_BANDS.reduce((s, [, , w]) => s + w, 0);
+  let r = rand(0, total);
+  for (const [min, max, w] of AGE_BANDS) {
+    if (r < w) return randInt(min, max);
+    r -= w;
+  }
+  return randInt(0, 6);
+}
+
+/** Whole days between `then` and now, floored at 0. */
+const daysSince = (then: Date) =>
+  Math.max(0, Math.floor((Date.now() - then.getTime()) / (24 * 60 * 60 * 1000)));
 
 function pickTier(): Tier {
   const total = TIER_WEIGHTS.reduce((s, [, w]) => s + w, 0);
@@ -71,23 +106,45 @@ async function run(): Promise<void> {
     byModule.set(key, list);
   }
 
-  // Synthetic members
-  const userDocs = Array.from({ length: USER_COUNT }, (_, i) => ({
-    clerkId: `seed_user_${i}`,
-    email: `member${i}@seed.enigma`,
-    firstName: `Member${i}`,
-    lastName: 'Seed',
-    tier: pickTier(),
-    role: 'member' as const,
-    lastActiveAt: daysAgo(randInt(0, 28)),
-  }));
-  const users = await User.insertMany(userDocs);
+  // Synthetic members, dated across the bands so the date chips separate.
+  //
+  // Inserted through the driver rather than Mongoose, the same way the progress
+  // and certificate rows below are: `{ timestamps: true }` would overwrite the
+  // createdAt with now, and every chip would report the same member count —
+  // which is the bug this is fixing. The cost is that schema defaults do not
+  // apply, so every field the Users screen filters on is stated here.
+  const users = Array.from({ length: USER_COUNT }, (_, i) => {
+    const joined = ageInDays();
+    return {
+      _id: new Types.ObjectId(),
+      clerkId: `seed_user_${i}`,
+      email: `member${i}@seed.enigma`,
+      firstName: `Member${i}`,
+      lastName: 'Seed',
+      tier: pickTier(),
+      role: 'member',
+      registrationStatus: 'completed',
+      invitationStatus: 'none',
+      joinedByInvite: false,
+      resendCount: 0,
+      // Nobody is active before they join, so this is drawn from their tenure.
+      lastActiveAt: daysAgo(randInt(0, joined)),
+      createdAt: daysAgo(joined),
+      updatedAt: daysAgo(randInt(0, joined)),
+      __v: 0,
+    };
+  });
+  await User.collection.insertMany(users);
 
   const progressRaw: Record<string, unknown>[] = [];
   const certRaw: Record<string, unknown>[] = [];
   const eventRaw: Record<string, unknown>[] = [];
 
   for (const u of users) {
+    // Activity is spread over the member's own tenure, so nothing predates the
+    // account and the older cohorts carry the older watch history.
+    const tenure = daysSince(u.createdAt);
+    const duringMembership = () => daysAgo(randInt(0, tenure));
     const accessible = videos.filter((v) => canAccessVideo(u.tier, v.tier));
 
     // Modules the user can fully access (every video reachable) → eligible to complete.
@@ -111,7 +168,7 @@ async function run(): Promise<void> {
         ? Math.round(rand(0.9, 1) * 100) / 100
         : Math.round(rand(0.1, 0.95) * 100) / 100;
       const completed = coverage >= 0.9;
-      const when = daysAgo(randInt(0, 28));
+      const when = duringMembership();
       progressRaw.push({
         _id: new Types.ObjectId(),
         userId: u._id,
@@ -134,7 +191,7 @@ async function run(): Promise<void> {
     // Certificate when every video in a module is completed
     for (const [moduleId, vids] of byModule) {
       if (vids.length > 0 && completedPerModule.get(moduleId) === vids.length) {
-        const issuedAt = daysAgo(randInt(0, 28));
+        const issuedAt = duringMembership();
         certRaw.push({
           _id: new Types.ObjectId(),
           userId: u._id,
@@ -147,7 +204,7 @@ async function run(): Promise<void> {
           __v: 0,
         });
         if (Math.random() < 0.7) {
-          const at = daysAgo(randInt(0, 28));
+          const at = duringMembership();
           eventRaw.push({
             _id: new Types.ObjectId(),
             userId: u._id,
