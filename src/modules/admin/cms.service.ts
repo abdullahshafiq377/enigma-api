@@ -497,6 +497,83 @@ export const cmsService = {
     return doc as VideoDoc;
   },
 
+  /**
+   * Everything the admin watch screen needs, in one call: the video's own
+   * detail, its neighbours in the module, and a playback grant.
+   *
+   * Deliberately NOT `videoService.issuePlaybackGrant`. That one refuses
+   * anything unpublished and then applies the tier ladder — right for a member,
+   * wrong here, because reviewing a DRAFT before it goes out is the point. The
+   * gate on this path is the admin role on the route, not the video's state.
+   *
+   * A missing source returns `grant: null` rather than throwing: a video with no
+   * playable file is a normal thing for the CMS to show, and a 409 would take
+   * the title and chapters down with it.
+   */
+  async getVideoForWatch(id: string, now: number = Date.now()) {
+    const video = (await Video.findById(id).exec()) as VideoDoc | null;
+    if (!video) throw ApiError.notFound('Video not found');
+
+    const siblings = await cmsService.listVideosByModule(video.moduleId.toString());
+    const at = siblings.findIndex((v) => v.id === video.id);
+    const moduleDoc = await Module.findById(video.moduleId).select('title').lean();
+
+    // Same preference as the member path: HLS when it has been transcoded,
+    // otherwise the progressive MP4 the wizard copies across on create.
+    const source = video.hlsManifestKey ?? video.mp4Key;
+    const nowSec = Math.floor(now / 1000);
+    const grant = source
+      ? {
+          manifestUrl: mediaService.signObjectUrl(source, nowSec),
+          playbackType: (video.hlsManifestKey ? 'hls' : 'mp4') as 'hls' | 'mp4',
+          captionsUrl: video.captionsKey
+            ? mediaService.signObjectUrl(video.captionsKey, nowSec)
+            : undefined,
+          transcriptUrl: video.transcriptKey
+            ? mediaService.signObjectUrl(video.transcriptKey, nowSec)
+            : undefined,
+          cookies: mediaService.issueSignedCookies(
+            source.split('/').slice(0, -1).join('/'),
+            nowSec,
+          ),
+        }
+      : null;
+
+    const pdfResources = await Promise.all(
+      video.pdfResources.map(async (r) => {
+        if (!r.key) return { title: r.title };
+        try {
+          return { title: r.title, downloadUrl: await mediaService.getDownloadUrl(r.key) };
+        } catch {
+          // A resource whose signing fails still belongs in the list, unlinked —
+          // silently dropping it would read as "this video has no resources".
+          return { title: r.title };
+        }
+      }),
+    );
+
+    return {
+      video: {
+        id: video.id,
+        moduleId: video.moduleId.toString(),
+        moduleTitle: moduleDoc?.title ?? '',
+        title: video.title,
+        description: video.description,
+        durationSec: video.durationSec,
+        tier: video.tier,
+        status: video.status,
+        chapters: video.chapters.map((c) => ({ startSec: c.startSec, title: c.title })),
+        transcript: video.transcript?.map((t) => ({ startSec: t.startSec, text: t.text })) ?? null,
+        pdfResources,
+      },
+      // Order is the module's running order, so "previous" and "next" mean the
+      // same thing here as they do in the table the admin clicked through from.
+      prevId: at > 0 ? siblings[at - 1]!.id : null,
+      nextId: at >= 0 && at < siblings.length - 1 ? siblings[at + 1]!.id : null,
+      grant,
+    };
+  },
+
   // ---- AWS media ----
   /** Presigned S3 PUT URL for the admin to upload a source file directly. */
   async createUploadUrl(

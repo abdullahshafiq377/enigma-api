@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 
+import { env } from '@/config/env';
 import type {
   AttachPdf,
   CreateModule,
@@ -82,6 +83,41 @@ export const cmsController = {
   attachPdf: asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.validated?.params as IdParam;
     sendSuccess(res, toVideoDTO(await cmsService.attachPdf(id, req.body as AttachPdf)));
+  }),
+
+  /** Watch a video from the CMS — draft or published, no tier ladder. */
+  watchVideo: asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.validated?.params as IdParam;
+    const { video, prevId, nextId, grant } = await cmsService.getVideoForWatch(id);
+
+    // Signed cookies cover the HLS segment fan-out, exactly as on the member
+    // path. Harmless for MP4, which carries its signature in the URL.
+    if (grant) {
+      const cookieOpts = {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none' as const,
+        ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
+        path: '/',
+      };
+      for (const [name, value] of Object.entries(grant.cookies)) {
+        res.cookie(name, value, cookieOpts);
+      }
+    }
+
+    sendSuccess(res, {
+      video,
+      prevId,
+      nextId,
+      grant: grant
+        ? {
+            manifestUrl: grant.manifestUrl,
+            playbackType: grant.playbackType,
+            captionsUrl: grant.captionsUrl,
+            transcriptUrl: grant.transcriptUrl,
+          }
+        : null,
+    });
   }),
 
   // AWS media

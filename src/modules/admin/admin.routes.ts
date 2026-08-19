@@ -149,6 +149,8 @@ router.patch(
   validate({ params: idParamSchema, body: updateVideoSchema }),
   cmsController.updateVideo,
 );
+// Watch a video from the CMS list. GET, and before the /:id POSTs for clarity.
+router.get('/videos/:id/watch', validate({ params: idParamSchema }), cmsController.watchVideo);
 router.post(
   '/videos/:id/publish',
   validate({ params: idParamSchema, body: publishSchema }),
