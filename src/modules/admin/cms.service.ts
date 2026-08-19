@@ -41,6 +41,8 @@ export interface CreateVideoInput {
   thumbnailInputKey?: string | undefined;
   /** Uploaded PDF resources (in the input bucket) to attach — copied to the output bucket on save. */
   resources?: { title: string; inputKey: string }[] | undefined;
+  /** Optional chapter marks, already sorted and de-duplicated by the schema. */
+  chapters?: { startSec: number; title: string }[] | undefined;
 }
 
 export interface UpdateModuleInput {
@@ -60,6 +62,8 @@ export interface UpdateVideoInput {
   tier?: VideoTier | undefined;
   durationSec?: number | undefined;
   status?: VideoStatus | undefined;
+  /** The whole list, replacing whatever is stored. `[]` clears it. */
+  chapters?: { startSec: number; title: string }[] | undefined;
 }
 
 export interface ReorderItem {
@@ -79,6 +83,8 @@ export interface AdminVideoDTO {
   status: VideoStatus;
   hasVideo: boolean;
   hasThumbnail: boolean;
+  /** Signed CDN URL for the poster, when there is one and signing is configured. */
+  thumbnailUrl?: string | undefined;
   hasTranscript: boolean;
   hasCaptions: boolean;
   pdfCount: number;
@@ -199,6 +205,35 @@ function videoNeedsAttention(v: VideoDoc): boolean {
   return !hasPlayableVideo(v);
 }
 
+/**
+ * Posters are signed against a 5-minute bucket rather than the exact second.
+ *
+ * The signature is part of the URL, so an unquantised timestamp gives every row
+ * its own URL — and every refetch a fresh set. That defeats the browser cache
+ * for an image the table shows once per row, and seeded videos all share one
+ * poster, so the whole list should be a single request. Rounding down makes the
+ * URL identical across rows and stable across refetches; the signature is good
+ * for hours, so a stale bucket costs nothing.
+ */
+const THUMB_SIGN_BUCKET_SEC = 300;
+const signBucket = () => Math.floor(Date.now() / 1000 / THUMB_SIGN_BUCKET_SEC);
+
+/**
+ * Sign a poster for the CMS table, or return undefined.
+ *
+ * Swallowing the failure is the point: a video row must render whether or not
+ * CloudFront is configured, and an unsigned poster costs a placeholder glyph,
+ * not a broken screen. `hasThumbnail` still reports what the record says.
+ */
+function thumbnailUrlFor(v: VideoDoc): string | undefined {
+  if (!v.thumbnailKey) return undefined;
+  try {
+    return mediaService.signObjectUrl(v.thumbnailKey, THUMB_SIGN_BUCKET_SEC * signBucket());
+  } catch {
+    return undefined;
+  }
+}
+
 /** Map a video doc to the admin DTO, deriving the asset indicators the CMS shows. */
 export function toVideoDTO(v: VideoDoc): AdminVideoDTO {
   return {
@@ -212,6 +247,7 @@ export function toVideoDTO(v: VideoDoc): AdminVideoDTO {
     status: v.status,
     hasVideo: hasPlayableVideo(v),
     hasThumbnail: Boolean(v.thumbnailKey),
+    thumbnailUrl: thumbnailUrlFor(v),
     hasTranscript: Boolean(v.transcriptKey),
     hasCaptions: Boolean(v.captionsKey),
     pdfCount: v.pdfResources.length,
@@ -469,6 +505,21 @@ export const cmsService = {
   },
 
   async updateVideo(id: string, patch: UpdateVideoInput): Promise<VideoDoc> {
+    /* The same rule the create schema enforces, but it cannot live in the update
+       schema: the length to measure against is in the database, not the request.
+       `patch.durationSec` wins when the same call changes both — otherwise
+       shortening a video and re-marking it in one go would be judged against the
+       length it used to have. */
+    if (patch.chapters?.length) {
+      const current = (await Video.findById(id).select('durationSec').lean()) as {
+        durationSec?: number;
+      } | null;
+      if (!current) throw ApiError.notFound('Video not found');
+      const durationSec = patch.durationSec ?? current.durationSec ?? 0;
+      const over = durationSec > 0 && patch.chapters.some((c) => c.startSec >= durationSec);
+      if (over) throw ApiError.badRequest('A chapter must start before the video ends.');
+    }
+
     const doc = await Video.findByIdAndUpdate(id, { $set: patch }, { new: true }).exec();
     if (!doc) throw ApiError.notFound('Video not found');
     return doc as VideoDoc;

@@ -82,6 +82,29 @@ export const createModuleSchema = z.object({
 });
 export const updateModuleSchema = createModuleSchema.partial();
 
+/* Chapters are a replace-the-whole-list payload, not per-item edits: they are an
+   ordered set where every entry's meaning depends on its neighbours, and a video
+   never has enough of them for the size of the body to matter. Sending the list
+   also makes add, retitle, delete and reorder one operation with one outcome.
+
+   Sorted and de-duplicated here rather than trusted: the strip reads left to
+   right, so an out-of-order list would render as a lie, and two chapters on the
+   same second have no defined winner. 50 is well past any real lesson and stops
+   a stray paste from producing an unreadable rail. */
+const chapterList = z
+  .array(
+    z.object({
+      startSec: z.number().int().nonnegative(),
+      title: z.string().trim().min(1).max(120),
+    }),
+  )
+  .max(50)
+  .transform((list) => [...list].sort((a, b) => a.startSec - b.startSec))
+  .refine(
+    (list) => new Set(list.map((c) => c.startSec)).size === list.length,
+    'Two chapters cannot start at the same second',
+  );
+
 export const createVideoSchema = z.object({
   moduleId: objectId,
   title: z.string().min(1),
@@ -99,7 +122,17 @@ export const createVideoSchema = z.object({
   resources: z
     .array(z.object({ title: z.string().min(1), inputKey: z.string().min(1) }))
     .optional(), // uploaded PDF resources
-});
+  chapters: chapterList.optional(), // optional at every point — see chapterList
+})
+  /* A chapter at or past the end can never be reached, so it is not a chapter —
+     it is a typo. Checked here rather than inside `chapterList` because the
+     limit lives in a sibling field; skipped when `durationSec` is absent, since
+     an unknown length cannot judge anything. Strictly less than: a mark on the
+     final second opens a section with no video left in it. */
+  .refine(
+    (v) => !v.durationSec || !v.chapters?.length || v.chapters.every((c) => c.startSec < v.durationSec!),
+    { path: ['chapters'], message: 'A chapter must start before the video ends.' },
+  );
 
 // Transcript generation (Add-video wizard): start a job, then poll it.
 export const transcribeStartSchema = z.object({ inputKey: z.string().min(1) });
@@ -110,6 +143,8 @@ export const updateVideoSchema = z.object({
   order: z.number().int().optional(),
   tier: z.enum(VIDEO_TIERS).optional(),
   durationSec: z.number().nonnegative().optional(),
+  // An empty array is a real value here — it is how the last chapter is deleted.
+  chapters: chapterList.optional(),
 });
 
 export const reorderSchema = z.object({
