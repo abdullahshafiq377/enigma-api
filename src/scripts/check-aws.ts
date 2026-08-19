@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   );
   results.push(
     await check('S3 — presigned upload URL', async () => {
-      await mediaService.createUploadUrl('healthcheck/probe.mp4', 'video/mp4');
+      await mediaService.createUploadUrl('healthcheck/probe.mp4', 'video/mp4', 1024, 'video');
     }),
   );
   results.push(

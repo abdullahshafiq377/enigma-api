@@ -14,10 +14,14 @@ import {
   inviteCsvSchema,
   listUsersAdminQuerySchema,
   moduleIdQuerySchema,
+  multipartAbortSchema,
+  multipartCompleteSchema,
+  multipartCreateSchema,
   processSchema,
   publishSchema,
   reorderSchema,
   roleUpdateSchema,
+  sourceUrlSchema,
   tierUpdateSchema,
   transcribeJobParamSchema,
   transcribeStartSchema,
@@ -162,7 +166,27 @@ router.post(
 );
 
 // --- CMS: uploads ---
+// Small files take the single presigned PUT; anything over the part size goes
+// through multipart, so one dropped chunk retries instead of the whole file.
 router.post('/media/upload-url', validate({ body: uploadUrlSchema }), cmsController.uploadUrl);
+router.post(
+  '/media/multipart/create',
+  validate({ body: multipartCreateSchema }),
+  cmsController.multipartCreate,
+);
+router.post(
+  '/media/multipart/complete',
+  validate({ body: multipartCompleteSchema }),
+  cmsController.multipartComplete,
+);
+router.post(
+  '/media/multipart/abort',
+  validate({ body: multipartAbortSchema }),
+  cmsController.multipartAbort,
+);
+// Play back a source that is still only in the input bucket — the Add-video
+// preview after a reload, when the browser no longer holds the local file.
+router.post('/media/source-url', validate({ body: sourceUrlSchema }), cmsController.sourceUrl);
 
 // --- CMS: transcript (start a job, then poll it) ---
 router.post('/transcribe', validate({ body: transcribeStartSchema }), cmsController.startTranscript);

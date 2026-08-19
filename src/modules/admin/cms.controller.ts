@@ -6,9 +6,13 @@ import type {
   CreateVideo,
   IdParam,
   ModuleIdQuery,
+  MultipartAbort,
+  MultipartComplete,
+  MultipartCreate,
   Process,
   Publish,
   Reorder,
+  SourceUrl,
   TranscribeJobParam,
   TranscribeStart,
   UpdateModule,
@@ -16,6 +20,7 @@ import type {
   UploadUrl,
 } from '@/modules/admin/admin.validators';
 import { cmsService, toVideoDTO } from '@/modules/admin/cms.service';
+import { mediaService } from '@/modules/media/media.service';
 import { sendSuccess } from '@/utils/apiResponse';
 import { asyncHandler } from '@/utils/asyncHandler';
 
@@ -81,8 +86,28 @@ export const cmsController = {
 
   // AWS media
   uploadUrl: asyncHandler(async (req: Request, res: Response) => {
-    const { filename, contentType } = req.body as UploadUrl;
-    sendSuccess(res, await cmsService.createUploadUrl(filename, contentType));
+    const { filename, contentType, sizeBytes, kind } = req.body as UploadUrl;
+    sendSuccess(res, await cmsService.createUploadUrl(filename, contentType, sizeBytes, kind));
+  }),
+  multipartCreate: asyncHandler(async (req: Request, res: Response) => {
+    const { filename, contentType, sizeBytes, kind } = req.body as MultipartCreate;
+    sendSuccess(
+      res,
+      await cmsService.createMultipartUpload(filename, contentType, sizeBytes, kind),
+    );
+  }),
+  multipartComplete: asyncHandler(async (req: Request, res: Response) => {
+    const { key, uploadId, parts } = req.body as MultipartComplete;
+    sendSuccess(res, await mediaService.completeMultipartUpload(key, uploadId, parts));
+  }),
+  multipartAbort: asyncHandler(async (req: Request, res: Response) => {
+    const { key, uploadId } = req.body as MultipartAbort;
+    await mediaService.abortMultipartUpload(key, uploadId);
+    sendSuccess(res, { aborted: true });
+  }),
+  sourceUrl: asyncHandler(async (req: Request, res: Response) => {
+    const { key } = req.body as SourceUrl;
+    sendSuccess(res, { url: await mediaService.getSourceUrl(key) });
   }),
   processVideo: asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.validated?.params as IdParam;

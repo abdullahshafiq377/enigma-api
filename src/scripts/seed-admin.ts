@@ -8,11 +8,20 @@ import { userRepository } from '@/modules/user/user.repository';
 /**
  * Seed a ready-to-use admin: creates a Clerk user (with password) flagged
  * role=admin, then mirrors it into Mongo so the admin login works immediately
- * (no dependency on the webhook). Idempotent — re-running promotes the existing
- * account instead of failing.
+ * (no dependency on the webhook).
+ *
+ * Idempotent in both directions — re-running an existing account re-promotes it
+ * AND resets its password, so a bad one can be repaired by running the command
+ * again.
+ *
+ * The password is NOT exempted from Clerk's rules. `skipPasswordChecks` used to
+ * be set here, which let anything through: a shell that does not expand `$PW`
+ * once left an admin account whose password was literally those three
+ * characters. Clerk rejects a weak or breached password now, loudly, at the
+ * point it is set.
  *
  * Usage: npm run seed-admin -- [email] [password]
- * Defaults: admin@enigma.test / Enigma!Admin2026
+ * Defaults: admin@enigmauniversity.com / Enigma!Admin2026
  */
 const email = (process.argv[2] ?? 'admin@enigmauniversity.com').toLowerCase();
 const password = process.argv[3] ?? 'Enigma!Admin2026';
@@ -33,7 +42,6 @@ async function run(): Promise<void> {
       firstName: 'Admin',
       lastName: 'User',
       publicMetadata: { role: 'admin', tier: 'sovereign' },
-      skipPasswordChecks: true,
     });
     clerkId = created.id;
     logger.info(`Created Clerk user: ${email}`);
@@ -53,7 +61,11 @@ async function run(): Promise<void> {
     await clerkClient.users.updateUserMetadata(clerkId, {
       publicMetadata: { role: 'admin', tier: 'sovereign' },
     });
-    logger.info(`Clerk user ${email} already existed — promoted to admin.`);
+    // The password too, not just the metadata. Without this a re-run could not
+    // repair a bad one — which is exactly what a shell that does not expand
+    // `$PW` leaves behind — and the docstring's "idempotent" was only half true.
+    await clerkClient.users.updateUser(clerkId, { password });
+    logger.info(`Clerk user ${email} already existed — promoted to admin, password reset.`);
   }
 
   // Backend-created emails are unverified, which blocks password sign-in.

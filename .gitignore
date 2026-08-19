@@ -8,6 +8,7 @@ build/
 # Environment — ignore ALL env files (incl. .env.bak, .env.production, etc.).
 # The only tracked one is .env.example, which must contain PLACEHOLDERS ONLY.
 .env
+.env_old
 .env.*
 !.env.example
 *.bak

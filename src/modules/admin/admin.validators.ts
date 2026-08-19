@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { MAX_UPLOAD_BYTES, UPLOAD_KINDS } from '@/modules/media/media.service';
 import { ROLES, TIERS } from '@/modules/user/user.types';
 import { VIDEO_TIERS } from '@/modules/video/video.model';
 
@@ -115,10 +116,62 @@ export const reorderSchema = z.object({
   items: z.array(z.object({ id: objectId, order: z.number().int() })).min(1),
 });
 
-export const uploadUrlSchema = z.object({
-  filename: z.string().min(1),
-  contentType: z.string().min(1),
+/* `sizeBytes` is required, not optional: it is signed into the URL as
+   ContentLength, so an omitted size would presign an upload of no fixed length
+   and hand back exactly the unbounded PUT this limit exists to prevent.
+
+   `kind` is required for the neighbouring reason. One endpoint serves the source
+   video, the poster and the PDF resources, and they do not share a ceiling — so
+   a size cannot be judged without knowing which it is, and an optional `kind`
+   defaulting to the loosest would let a 250MB "PDF" through. The cap is applied
+   in a refinement rather than `.max()` because it depends on a sibling field. */
+export const uploadUrlSchema = z
+  .object({
+    filename: z.string().min(1),
+    contentType: z.string().min(1),
+    sizeBytes: z.number().int().positive(),
+    kind: z.enum(UPLOAD_KINDS),
+  })
+  .refine(({ sizeBytes, kind }) => sizeBytes <= MAX_UPLOAD_BYTES[kind], ({ kind }) => ({
+    path: ['sizeBytes'],
+    message: `That ${kind} is over the ${MAX_UPLOAD_BYTES[kind] / (1024 * 1024)}MB limit.`,
+  }));
+
+/* The key is minted server-side as `inputs/<uuid>/<filename>` but comes BACK
+   from the browser on complete/abort, so it is re-checked rather than trusted:
+   without this, an admin session could seal or delete a multipart upload
+   anywhere in the bucket, including under `outputs/`. */
+const inputKey = z
+  .string()
+  .regex(
+    /^inputs\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\/.+$/i,
+    'Not an upload key',
+  );
+
+export const multipartCreateSchema = uploadUrlSchema;
+
+export const multipartCompleteSchema = z.object({
+  key: inputKey,
+  uploadId: z.string().min(1),
+  parts: z
+    .array(
+      z.object({
+        partNumber: z.number().int().min(1).max(10_000),
+        etag: z.string().min(1),
+      }),
+    )
+    .min(1),
 });
+
+export const multipartAbortSchema = z.object({
+  key: inputKey,
+  uploadId: z.string().min(1),
+});
+
+/* Same key guard as the multipart calls, and for the same reason: this one hands
+   back a URL that READS the object, so an unchecked key would presign a download
+   of anything in the bucket. */
+export const sourceUrlSchema = z.object({ key: inputKey });
 
 export const publishSchema = z.object({ published: z.boolean() });
 export const processSchema = z.object({ inputKey: z.string().min(1) });
@@ -134,6 +187,10 @@ export type CreateVideo = z.infer<typeof createVideoSchema>;
 export type UpdateVideo = z.infer<typeof updateVideoSchema>;
 export type Reorder = z.infer<typeof reorderSchema>;
 export type UploadUrl = z.infer<typeof uploadUrlSchema>;
+export type MultipartCreate = z.infer<typeof multipartCreateSchema>;
+export type MultipartComplete = z.infer<typeof multipartCompleteSchema>;
+export type MultipartAbort = z.infer<typeof multipartAbortSchema>;
+export type SourceUrl = z.infer<typeof sourceUrlSchema>;
 export type Publish = z.infer<typeof publishSchema>;
 export type Process = z.infer<typeof processSchema>;
 export type AttachPdf = z.infer<typeof attachPdfSchema>;

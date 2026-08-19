@@ -9,9 +9,9 @@ import { Role as RoleModel } from '@/modules/role/role.model';
 import { Tier as TierModel } from '@/modules/tier/tier.model';
 import { User } from '@/modules/user/user.model';
 import { userRepository } from '@/modules/user/user.repository';
-import { videoRepository } from '@/modules/video/video.repository';
 import type { InvitationStatus, IUser, RegistrationStatus } from '@/modules/user/user.types';
 import { type Role, type Tier, TIERS } from '@/modules/user/user.types';
+import { videoRepository } from '@/modules/video/video.repository';
 import { ApiError } from '@/utils/ApiError';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

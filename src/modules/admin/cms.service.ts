@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { logger } from '@/config/logger';
-import { mediaService } from '@/modules/media/media.service';
+import { mediaService, type UploadKind } from '@/modules/media/media.service';
 import { Module, type ModuleDoc } from '@/modules/module/module.model';
 import { Progress } from '@/modules/progress/progress.model';
 import {
@@ -499,9 +499,25 @@ export const cmsService = {
 
   // ---- AWS media ----
   /** Presigned S3 PUT URL for the admin to upload a source file directly. */
-  async createUploadUrl(filename: string, contentType: string) {
+  async createUploadUrl(
+    filename: string,
+    contentType: string,
+    sizeBytes: number,
+    kind: UploadKind,
+  ) {
     const key = `inputs/${randomUUID()}/${filename}`;
-    return mediaService.createUploadUrl(key, contentType);
+    return mediaService.createUploadUrl(key, contentType, sizeBytes, kind);
+  },
+
+  /** Same key scheme as the single PUT — one upload, many presigned parts. */
+  async createMultipartUpload(
+    filename: string,
+    contentType: string,
+    sizeBytes: number,
+    kind: UploadKind,
+  ) {
+    const key = `inputs/${randomUUID()}/${filename}`;
+    return mediaService.createMultipartUpload(key, contentType, sizeBytes, kind);
   },
 
   // ---- Transcript (Add-video wizard) ----

@@ -2,7 +2,7 @@ import type { ModuleDoc } from '@/modules/module/module.model';
 import { moduleRepository } from '@/modules/module/module.repository';
 import { progressRepository } from '@/modules/progress/progress.repository';
 import type { Tier } from '@/modules/user/user.types';
-import { canAccessVideo } from '@/modules/video/access';
+import { canAccessVideoInModule, type Viewer } from '@/modules/video/access';
 import type { VideoDoc, VideoTier } from '@/modules/video/video.model';
 import { videoRepository } from '@/modules/video/video.repository';
 import { type VideoDTO, videoService } from '@/modules/video/video.service';
@@ -53,11 +53,14 @@ export interface ModuleDetailDTO extends ModuleSummaryDTO {
 function summarize(
   module: ModuleDoc,
   videos: VideoDoc[],
-  userTier: Tier,
+  viewer: Viewer,
   completed: ReadonlySet<string>,
 ): ModuleSummaryDTO {
   const videoCount = videos.length;
-  const accessible = videos.filter((v) => canAccessVideo(userTier, v.tier));
+  // Module-aware: a partner module the member is not assigned to counts as
+  // nothing accessible, so it greys out in the list exactly as a tier they
+  // cannot reach does.
+  const accessible = videos.filter((v) => canAccessVideoInModule(viewer, v.tier, module));
   const availableCount = accessible.length;
   const completedCount = accessible.filter((v) => completed.has(v.id)).length;
   return {
@@ -99,14 +102,16 @@ export const moduleService = {
       ),
     );
 
-    return modules.map((m) => summarize(m, byModule.get(m.id) ?? [], userTier, completed));
+    const viewer: Viewer = { id: userId, tier: userTier };
+    return modules.map((m) => summarize(m, byModule.get(m.id) ?? [], viewer, completed));
   },
 
   async getForUser(id: string, userTier: Tier, userId: string): Promise<ModuleDetailDTO> {
     const module = await moduleRepository.findById(id);
     if (!module || !module.isPublished) throw ApiError.notFound('Module not found');
 
-    const videos = await videoService.listByModule(id, userTier);
+    // The module is already loaded, so hand it over rather than re-reading it.
+    const videos = await videoService.listByModule(id, { id: userId, tier: userTier }, module);
     const progressDocs = await progressRepository.findManyByUserAndVideos(
       userId,
       videos.map((v) => v.id),
